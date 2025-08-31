@@ -31,6 +31,10 @@ test("tokenizer", () => {
         "\n",
         "test",
     ]);
+    // 3rd edition: Syntax Error
+    // The source character immediately following a NumericLiteral must not be an IdentifierStart or DecimalDigit.
+    expect(filterByValue(tokenize("3in"))).toStrictEqual([3, "in"]);
+    expect(filterByValue(tokenize("0;"))).toStrictEqual([0, ";"]);
     expect(filterByValue(tokenize("-123"))).toStrictEqual(["-", 123]);
     expect(filterByValue(tokenize("+123"))).toStrictEqual(["+", 123]);
     expect(filterByValue(tokenize("0123"))).toStrictEqual([0o123]);
@@ -99,7 +103,24 @@ test("tokenizer", () => {
     ).toStrictEqual(["return", "\n", 1]);
 });
 
-function astToString(p: Program): string[] {
+function omitPosition(p: any): any {
+    if (p == null) {
+        return p;
+    }
+    if (typeof p !== "object") {
+        return p;
+    }
+    if (Array.isArray(p)) {
+        return p.map(omitPosition);
+    }
+    const entries = Object.entries(p).filter(([k]) => k !== "start" && k !== "end");
+    for (const kv of entries) {
+        kv[1] = omitPosition(kv[1]);
+    }
+    return Object.fromEntries(entries);
+}
+
+function astToString(p: Program): any[] {
     return p.sourceElements.map(sourceElementToString);
 }
 
@@ -121,7 +142,13 @@ function statementToString(p: Statement): string {
         case "expressionStatement":
             return `(expr ${expressionToString(p.expression)})`;
         case "ifStatement":
+            if (p.elseStatement == null) {
+                return `(if ${expressionToString(p.expression)} ${statementToString(p.thenStatement)})`;
+            } else {
+                return `(if ${expressionToString(p.expression)} ${statementToString(p.thenStatement)} ${statementToString(p.elseStatement)})`;
+            }
         case "whileStatement":
+            return `(while ${expressionToString(p.expression)} ${statementToString(p.statement)})`;
         case "forStatement":
         case "forInStatement":
         case "continueStatement":
@@ -355,4 +382,618 @@ b`)
     expect(astToString(parse(String.raw`a = b + c(d + e).print()`))).toStrictEqual([
         "(expr (= a (+ b (call (member-ident (call c (+ d e)) print)))))",
     ]);
+    expect(
+        omitPosition(
+            parse(String.raw`
+while (1) {
+    console.log(1);
+}
+                `)
+        )
+    ).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "whileStatement",
+                expression: { type: "literalExpression", value: 1 },
+                statement: {
+                    type: "block",
+                    statementList: [
+                        {
+                            type: "expressionStatement",
+                            expression: {
+                                type: "callOperator",
+                                expression: {
+                                    type: "memberOperator",
+                                    left: { type: "identifierExpression", name: "console" },
+                                    name: "log",
+                                },
+                                argumentList: [{ type: "literalExpression", value: 1 }],
+                            },
+                        },
+                    ],
+                },
+            },
+        ],
+    });
+    expect(omitPosition(parse(String.raw`while (1)console.log(1)`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "whileStatement",
+                expression: { type: "literalExpression", value: 1 },
+                statement: {
+                    type: "expressionStatement",
+                    expression: {
+                        type: "callOperator",
+                        expression: {
+                            type: "memberOperator",
+                            left: { type: "identifierExpression", name: "console" },
+                            name: "log",
+                        },
+                        argumentList: [{ type: "literalExpression", value: 1 }],
+                    },
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`with(1)console.log(1)`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "withStatement",
+                expression: { type: "literalExpression", value: 1 },
+                statement: {
+                    type: "expressionStatement",
+                    expression: {
+                        type: "callOperator",
+                        expression: {
+                            type: "memberOperator",
+                            left: { type: "identifierExpression", name: "console" },
+                            name: "log",
+                        },
+                        argumentList: [{ type: "literalExpression", value: 1 }],
+                    },
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`break;continue;return 1;`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "breakStatement",
+            },
+            {
+                type: "continueStatement",
+            },
+            {
+                type: "returnStatement",
+                expression: { type: "literalExpression", value: 1 },
+            },
+        ],
+    } as Program);
+    expect(
+        omitPosition(
+            parse(String.raw`return
+1`)
+        )
+    ).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "returnStatement",
+                expression: undefined,
+            },
+            {
+                type: "expressionStatement",
+                expression: { type: "literalExpression", value: 1 },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`;;`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "emptyStatement",
+            },
+            {
+                type: "emptyStatement",
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`var a = 1`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "variableStatement",
+                variableDeclarationList: [
+                    {
+                        type: "variableDeclaration",
+                        name: "a",
+                        initializer: {
+                            type: "literalExpression",
+                            value: 1,
+                        },
+                    },
+                ],
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`var a = 1, b = 2`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "variableStatement",
+                variableDeclarationList: [
+                    {
+                        type: "variableDeclaration",
+                        name: "a",
+                        initializer: {
+                            type: "literalExpression",
+                            value: 1,
+                        },
+                    },
+                    {
+                        type: "variableDeclaration",
+                        name: "b",
+                        initializer: {
+                            type: "literalExpression",
+                            value: 2,
+                        },
+                    },
+                ],
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`var a;`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "variableStatement",
+                variableDeclarationList: [
+                    {
+                        type: "variableDeclaration",
+                        name: "a",
+                        initializer: undefined,
+                    },
+                ],
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`var a,b`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "variableStatement",
+                variableDeclarationList: [
+                    {
+                        type: "variableDeclaration",
+                        name: "a",
+                        initializer: undefined,
+                    },
+                    {
+                        type: "variableDeclaration",
+                        name: "b",
+                        initializer: undefined,
+                    },
+                ],
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`if (1);else;`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "ifStatement",
+                expression: {
+                    type: "literalExpression",
+                    value: 1,
+                },
+                thenStatement: {
+                    type: "emptyStatement",
+                },
+                elseStatement: {
+                    type: "emptyStatement",
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`if (1);`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "ifStatement",
+                expression: {
+                    type: "literalExpression",
+                    value: 1,
+                },
+                thenStatement: {
+                    type: "emptyStatement",
+                },
+                elseStatement: undefined,
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`for(;;);`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "forStatement",
+                initialization: undefined,
+                condition: undefined,
+                afterthought: undefined,
+                statement: {
+                    type: "emptyStatement",
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`for(var a;;);`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "forStatement",
+                initialization: {
+                    type: "variableStatement",
+                    variableDeclarationList: [
+                        {
+                            type: "variableDeclaration",
+                            name: "a",
+                            initializer: undefined,
+                        },
+                    ],
+                },
+                condition: undefined,
+                afterthought: undefined,
+                statement: {
+                    type: "emptyStatement",
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`for(var a,b;;);`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "forStatement",
+                initialization: {
+                    type: "variableStatement",
+                    variableDeclarationList: [
+                        {
+                            type: "variableDeclaration",
+                            name: "a",
+                            initializer: undefined,
+                        },
+                        {
+                            type: "variableDeclaration",
+                            name: "b",
+                            initializer: undefined,
+                        },
+                    ],
+                },
+                condition: undefined,
+                afterthought: undefined,
+                statement: {
+                    type: "emptyStatement",
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`for(var a=1,b;;);`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "forStatement",
+                initialization: {
+                    type: "variableStatement",
+                    variableDeclarationList: [
+                        {
+                            type: "variableDeclaration",
+                            name: "a",
+                            initializer: {
+                                type: "literalExpression",
+                                value: 1,
+                            },
+                        },
+                        {
+                            type: "variableDeclaration",
+                            name: "b",
+                            initializer: undefined,
+                        },
+                    ],
+                },
+                condition: undefined,
+                afterthought: undefined,
+                statement: {
+                    type: "emptyStatement",
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`for(var a=1,b;a>0;);`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "forStatement",
+                initialization: {
+                    type: "variableStatement",
+                    variableDeclarationList: [
+                        {
+                            type: "variableDeclaration",
+                            name: "a",
+                            initializer: {
+                                type: "literalExpression",
+                                value: 1,
+                            },
+                        },
+                        {
+                            type: "variableDeclaration",
+                            name: "b",
+                            initializer: undefined,
+                        },
+                    ],
+                },
+                condition: {
+                    type: "greaterThanOperator",
+                    left: {
+                        type: "identifierExpression",
+                        name: "a",
+                    },
+                    right: {
+                        type: "literalExpression",
+                        value: 0,
+                    },
+                },
+                afterthought: undefined,
+                statement: {
+                    type: "emptyStatement",
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`for(var a=1,b;a>0;a++);`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "forStatement",
+                initialization: {
+                    type: "variableStatement",
+                    variableDeclarationList: [
+                        {
+                            type: "variableDeclaration",
+                            name: "a",
+                            initializer: {
+                                type: "literalExpression",
+                                value: 1,
+                            },
+                        },
+                        {
+                            type: "variableDeclaration",
+                            name: "b",
+                            initializer: undefined,
+                        },
+                    ],
+                },
+                condition: {
+                    type: "greaterThanOperator",
+                    left: {
+                        type: "identifierExpression",
+                        name: "a",
+                    },
+                    right: {
+                        type: "literalExpression",
+                        value: 0,
+                    },
+                },
+                afterthought: {
+                    type: "postfixIncrementOperator",
+                    expression: {
+                        type: "identifierExpression",
+                        name: "a",
+                    },
+                },
+                statement: {
+                    type: "emptyStatement",
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`for(var a=1,b;a>0;a++,b++);`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "forStatement",
+                initialization: {
+                    type: "variableStatement",
+                    variableDeclarationList: [
+                        {
+                            type: "variableDeclaration",
+                            name: "a",
+                            initializer: {
+                                type: "literalExpression",
+                                value: 1,
+                            },
+                        },
+                        {
+                            type: "variableDeclaration",
+                            name: "b",
+                            initializer: undefined,
+                        },
+                    ],
+                },
+                condition: {
+                    type: "greaterThanOperator",
+                    left: {
+                        type: "identifierExpression",
+                        name: "a",
+                    },
+                    right: {
+                        type: "literalExpression",
+                        value: 0,
+                    },
+                },
+                afterthought: {
+                    type: "commaOperator",
+                    left: {
+                        type: "postfixIncrementOperator",
+                        expression: {
+                            type: "identifierExpression",
+                            name: "a",
+                        },
+                    },
+                    right: {
+                        type: "postfixIncrementOperator",
+                        expression: {
+                            type: "identifierExpression",
+                            name: "b",
+                        },
+                    },
+                },
+                statement: {
+                    type: "emptyStatement",
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`for(a in b);`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "forInStatement",
+                initialization: {
+                    type: "identifierExpression",
+                    name: "a",
+                },
+                expression: {
+                    type: "identifierExpression",
+                    name: "b",
+                },
+                statement: {
+                    type: "emptyStatement",
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`for(var a in b);`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "forInStatement",
+                initialization: {
+                    type: "variableDeclaration",
+                    name: "a",
+                    initializer: undefined,
+                },
+                expression: {
+                    type: "identifierExpression",
+                    name: "b",
+                },
+                statement: {
+                    type: "emptyStatement",
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`for(var a =1in b);`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "forInStatement",
+                initialization: {
+                    type: "variableDeclaration",
+                    name: "a",
+                    initializer: {
+                        type: "literalExpression",
+                        value: 1,
+                    },
+                },
+                expression: {
+                    type: "identifierExpression",
+                    name: "b",
+                },
+                statement: {
+                    type: "emptyStatement",
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`function func(){}`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "functionDeclaration",
+                name: "func",
+                parameters: [] as string[],
+                block: {
+                    type: "block",
+                    statementList: [] as Statement[],
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`function func(a){}`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "functionDeclaration",
+                name: "func",
+                parameters: ["a"],
+                block: {
+                    type: "block",
+                    statementList: [] as Statement[],
+                },
+            },
+        ],
+    } as Program);
+    expect(omitPosition(parse(String.raw`function func(a, b){}`))).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "functionDeclaration",
+                name: "func",
+                parameters: ["a", "b"],
+                block: {
+                    type: "block",
+                    statementList: [] as Statement[],
+                },
+            },
+        ],
+    } as Program);
+    expect(
+        omitPosition(
+            parse(String.raw`function func(a, b){
+a /= 2;
+        }`)
+        )
+    ).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "functionDeclaration",
+                name: "func",
+                parameters: ["a", "b"],
+                block: {
+                    type: "block",
+                    statementList: [
+                        {
+                            type: "expressionStatement",
+                            expression: {
+                                type: "assignmentOperator",
+                                operator: "/=",
+                                left: {
+                                    type: "identifierExpression",
+                                    name: "a",
+                                },
+                                right: {
+                                    type: "literalExpression",
+                                    value: 2,
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+        ],
+    } as Program);
 });

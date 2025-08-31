@@ -236,6 +236,12 @@ class UnexpectedTokenError extends Error {
     }
 }
 
+class SyntaxError extends Error {
+    constructor(syntax: string, message: string, position: Position) {
+        super(`${syntax}: ${message}, ${position.line}:${position.column}`);
+    }
+}
+
 class Reader {
     private source: string;
     private prevIndex: number;
@@ -336,7 +342,11 @@ export function* tokenize(source: string): Generator<Token | LineTerminator, End
             } else if (isOctalDigit(char)) {
                 yield parseOctalIntegerLiteral(reader, start);
             } else {
-                yield parseDecimalLiteral(reader, start);
+                if (char === "." || isDecimalDigit(char) || isExponentIndicator(char)) {
+                    yield parseDecimalLiteral(reader, start);
+                } else {
+                    yield { type: "numericLiteral", value: 0, start, end: reader.prevPosition };
+                }
             }
             continue;
         }
@@ -423,7 +433,7 @@ function parseSingleLineComment(reader: Reader) {
 }
 
 function parseDecimalLiteral(reader: Reader, start: Position): NumericLiteral {
-    // current: 0 or NonZeroDigit or .
+    // current: DecimalDigit or .
     if (reader.current === ".") {
         reader.next();
         parseDecimalDigits(reader);
@@ -713,8 +723,9 @@ export type VariableStatement = {
 };
 
 export type VariableDeclaration = {
+    type: "variableDeclaration";
     name: string;
-    initializer?: AssignmentExpression;
+    initializer: AssignmentExpression | undefined;
     start: Position;
     end: Position;
 };
@@ -736,7 +747,7 @@ export type IfStatement = {
     type: "ifStatement";
     expression: Expression;
     thenStatement: Statement;
-    elseStatement?: Statement;
+    elseStatement: Statement | undefined;
     start: Position;
     end: Position;
 };
@@ -747,21 +758,27 @@ export type WhileStatement = {
     type: "whileStatement";
     expression: Expression;
     statement: Statement;
+    start: Position;
+    end: Position;
 };
 
 export type ForStatement = {
     type: "forStatement";
-    initialization?: Expression | VariableStatement;
-    condition?: Expression;
-    afterthought?: Expression;
+    initialization: Expression | VariableStatement | undefined;
+    condition: Expression | undefined;
+    afterthought: Expression | undefined;
     statement: Statement;
+    start: Position;
+    end: Position;
 };
 
 export type ForInStatement = {
     type: "forInStatement";
-    initialization?: LeftHandSideExpression | VariableDeclaration;
+    initialization: LeftHandSideExpression | VariableDeclaration;
     expression: Expression;
     statement: Statement;
+    start: Position;
+    end: Position;
 };
 
 export type ContinueStatement = {
@@ -778,7 +795,7 @@ export type BreakStatement = {
 
 export type ReturnStatement = {
     type: "returnStatement";
-    expression?: Expression;
+    expression: Expression | undefined;
     start: Position;
     end: Position;
 };
@@ -1280,6 +1297,7 @@ function parseStatement(tokenizer: Tokenizer): Statement {
         return parseBlock(tokenizer);
     }
     if (begin.type === "keyword" && begin.value === "var") {
+        return parseVariableStatement(tokenizer);
     }
     if (begin.type === "keyword") {
         if (
@@ -1315,22 +1333,115 @@ function parseStatement(tokenizer: Tokenizer): Statement {
         }
     }
     if (begin.type === "punctuator" && begin.value === ";") {
+        return parseEmptyStatement(tokenizer);
     }
     if (begin.type === "keyword" && begin.value === "if") {
+        return parseIfStatement(tokenizer);
     }
     if (begin.type === "keyword" && begin.value === "for") {
+        return parseForStatement(tokenizer);
     }
     if (begin.type === "keyword" && begin.value === "while") {
+        return parseWhileStatement(tokenizer);
     }
     if (begin.type === "keyword" && begin.value === "continue") {
+        return parseContinueStatement(tokenizer);
     }
     if (begin.type === "keyword" && begin.value === "break") {
+        return parseBreakStatement(tokenizer);
     }
     if (begin.type === "keyword" && begin.value === "return") {
+        return parseReturnStatement(tokenizer);
     }
     if (begin.type === "keyword" && begin.value === "with") {
+        return parseWithStatement(tokenizer);
     }
-    throw new Error();
+    throw new UnexpectedTokenError(
+        "Statement",
+        "{ or var or this or delete or void or typeof or new or Identifier or Literal or ( or ++ or -- or + or - or ~ or ! or ; or if or for or while or continue or break or return or with",
+        begin
+    );
+}
+
+function parseBlock(tokenizer: Tokenizer): Block {
+    const begin = tokenizer.current;
+    if (begin.type !== "punctuator" || begin.value !== "{") {
+        throw new UnexpectedTokenError("Block", "{", begin);
+    }
+    tokenizer.next();
+    const statementList: Statement[] = [];
+    while (true) {
+        const end = tokenizer.current;
+        if (end.type === "punctuator" && end.value === "}") {
+            tokenizer.next();
+            break;
+        }
+        statementList.push(parseStatement(tokenizer));
+    }
+    return {
+        type: "block",
+        statementList,
+        start: begin.start,
+        end: tokenizer.prevPosition,
+    };
+}
+
+function parseVariableStatement(tokenizer: Tokenizer): VariableStatement {
+    const begin = tokenizer.current;
+    if (begin.type !== "keyword" || begin.value !== "var") {
+        throw new UnexpectedTokenError("VariableDeclaration", "var", begin);
+    }
+    tokenizer.next();
+    const variableDeclarationList = parseVariableDeclarationList(tokenizer);
+    if (!parseSemicolon(tokenizer)) {
+        throw new UnexpectedTokenError("ExpressionStatement", "; or } or LineTerminator", tokenizer.current);
+    }
+    return {
+        type: "variableStatement",
+        variableDeclarationList,
+        start: begin.start,
+        end: tokenizer.prevPosition,
+    };
+}
+
+function parseVariableDeclarationList(tokenizer: Tokenizer): VariableDeclaration[] {
+    const variableDeclarationList: VariableDeclaration[] = [];
+    while (true) {
+        const identifier = tokenizer.current;
+        if (identifier.type !== "identifier") {
+            break;
+        }
+        variableDeclarationList.push(parseVariableDeclaration(tokenizer));
+        const comma = tokenizer.current;
+        if (comma.type !== "punctuator" || comma.value !== ",") {
+            break;
+        }
+        tokenizer.next();
+    }
+    if (variableDeclarationList.length === 0) {
+        throw new UnexpectedTokenError("VariableDeclarationList", "identifier", tokenizer.current);
+    }
+    return variableDeclarationList;
+}
+
+function parseVariableDeclaration(tokenizer: Tokenizer): VariableDeclaration {
+    const identifier = tokenizer.current;
+    if (identifier.type !== "identifier") {
+        throw new UnexpectedTokenError("VariableDeclaration", "Identifier", identifier);
+    }
+    const eq = tokenizer.next();
+    let initializer: AssignmentExpression | undefined;
+    if (eq.type === "punctuator" && eq.value === "=") {
+        tokenizer.next();
+        initializer = parseAssignmentExpression(tokenizer);
+    }
+    return {
+        type: "variableDeclaration",
+        name: identifier.value,
+        initializer,
+        start: identifier.start,
+        end: tokenizer.prevPosition,
+    };
 }
 
 function parseSemicolon(tokenizer: Tokenizer): boolean {
@@ -1365,28 +1476,259 @@ function parseExpressionStatement(tokenizer: Tokenizer): ExpressionStatement {
     return statement;
 }
 
-function parseBlock(tokenizer: Tokenizer): Block {
+function parseEmptyStatement(tokenizer: Tokenizer): EmptyStatement {
     const begin = tokenizer.current;
-    if (begin.type !== "punctuator" || begin.value !== "{") {
-        throw new UnexpectedTokenError("Block", "{", begin);
-    }
-    const statementList: Statement[] = [];
-    while (true) {
-        const end = tokenizer.next();
-        const statement = parseStatement(tokenizer);
-        if (statement != null) {
-            statementList.push(statement);
-            continue;
-        }
-        if (end.type !== "punctuator" || end.value !== "}") {
-            throw new UnexpectedTokenError("Block", "}", end);
-        }
-        break;
+    if (begin.type !== "punctuator" || begin.value !== ";") {
+        throw new UnexpectedTokenError("EmptyStatement", ";", begin);
     }
     tokenizer.next();
     return {
-        type: "block",
-        statementList,
+        type: "emptyStatement",
+        start: begin.start,
+        end: tokenizer.prevPosition,
+    };
+}
+
+function parseIfStatement(tokenizer: Tokenizer): IfStatement {
+    const begin = tokenizer.current;
+    if (begin.type !== "keyword" || begin.value !== "if") {
+        throw new UnexpectedTokenError("IfStatement", "if", begin);
+    }
+    const ps = tokenizer.next();
+    if (ps.type !== "punctuator" || ps.value !== "(") {
+        throw new UnexpectedTokenError("IfStatement", "(", begin);
+    }
+    tokenizer.next();
+    const expression = parseExpression(tokenizer);
+    const pe = tokenizer.current;
+    if (pe.type !== "punctuator" || pe.value !== ")") {
+        throw new UnexpectedTokenError("IfStatement", ")", begin);
+    }
+    tokenizer.next();
+    const thenStatement = parseStatement(tokenizer);
+    let elseStatement: Statement | undefined;
+    const elseToken = tokenizer.current;
+    if (elseToken.type === "keyword" && elseToken.value === "else") {
+        tokenizer.next();
+        elseStatement = parseStatement(tokenizer);
+    }
+    return {
+        type: "ifStatement",
+        expression,
+        thenStatement,
+        elseStatement,
+        start: begin.start,
+        end: tokenizer.prevPosition,
+    };
+}
+
+function parseWhileStatement(tokenizer: Tokenizer): WhileStatement {
+    const begin = tokenizer.current;
+    if (begin.type !== "keyword" || begin.value !== "while") {
+        throw new UnexpectedTokenError("WhileStatement", "while", begin);
+    }
+    const ps = tokenizer.next();
+    if (ps.type !== "punctuator" || ps.value !== "(") {
+        throw new UnexpectedTokenError("WhileStatement", "(", ps);
+    }
+    tokenizer.next();
+    const expression = parseExpression(tokenizer);
+    const pe = tokenizer.current;
+    if (pe.type !== "punctuator" || pe.value !== ")") {
+        throw new UnexpectedTokenError("WhileStatement", ")", pe);
+    }
+    tokenizer.next();
+    const statement = parseStatement(tokenizer);
+    return {
+        type: "whileStatement",
+        expression,
+        statement,
+        start: begin.start,
+        end: tokenizer.prevPosition,
+    };
+}
+
+function parseForStatement(tokenizer: Tokenizer): ForStatement | ForInStatement {
+    const begin = tokenizer.current;
+    if (begin.type !== "keyword" || begin.value !== "for") {
+        throw new UnexpectedTokenError("ForStatement", "for", begin);
+    }
+    const ps = tokenizer.next();
+    if (ps.type !== "punctuator" || ps.value !== "(") {
+        throw new UnexpectedTokenError("ForStatement", "(", begin);
+    }
+    const initToken = tokenizer.next();
+    let initialization: VariableStatement | Expression | undefined;
+    if (initToken.type === "keyword" && initToken.value === "var") {
+        tokenizer.next();
+        initialization = {
+            type: "variableStatement",
+            variableDeclarationList: parseVariableDeclarationList(tokenizer),
+            start: initToken.start,
+            end: tokenizer.prevPosition,
+        };
+    } else if (initToken.type !== "punctuator" || initToken.value !== ";") {
+        initialization = parseExpression(tokenizer);
+    }
+    const inOrSemicolon = tokenizer.current;
+    if (inOrSemicolon.type === "punctuator" && inOrSemicolon.value === ";") {
+        tokenizer.next();
+        const secondSemicolonOrExpression = tokenizer.current;
+        let condition: Expression | undefined;
+        if (secondSemicolonOrExpression.type !== "punctuator" || secondSemicolonOrExpression.value !== ";") {
+            condition = parseExpression(tokenizer);
+        }
+        const secondSemicolon = tokenizer.current;
+        if (secondSemicolon.type !== "punctuator" || secondSemicolon.value !== ";") {
+            throw new UnexpectedTokenError("ForStatement", ";", secondSemicolon);
+        }
+        const endOrExpression = tokenizer.next();
+        let afterthought: Expression | undefined;
+        if (endOrExpression.type !== "punctuator" || endOrExpression.value !== ")") {
+            afterthought = parseExpression(tokenizer);
+        }
+        const end = tokenizer.current;
+        if (end.type !== "punctuator" || end.value !== ")") {
+            throw new UnexpectedTokenError("ForStatement", ")", secondSemicolon);
+        }
+        tokenizer.next();
+        const statement = parseStatement(tokenizer);
+        return {
+            type: "forStatement",
+            initialization,
+            condition,
+            afterthought,
+            statement,
+            start: begin.start,
+            end: tokenizer.prevPosition,
+        };
+    } else if (inOrSemicolon.type === "keyword" && inOrSemicolon.value === "in") {
+        let forInIntialization: VariableDeclaration | LeftHandSideExpression;
+        if (initialization == null) {
+            throw new SyntaxError("ForStatement", "VariableDeclaration", tokenizer.current.start);
+        } else if (initialization.type === "variableStatement") {
+            if (
+                initialization.variableDeclarationList[0] == null ||
+                initialization.variableDeclarationList.length !== 1
+            ) {
+                throw new SyntaxError("ForStatement", "VariableDeclaration", tokenizer.current.start);
+            }
+            forInIntialization = initialization.variableDeclarationList[0];
+        } else {
+            switch (initialization.type) {
+                case "thisExpression":
+                case "identifierExpression":
+                case "literalExpression":
+                case "groupingOperator":
+                case "memberOperator":
+                case "newOperator":
+                case "callOperator":
+                    forInIntialization = initialization;
+                    break;
+                default:
+                    throw new SyntaxError("ForStatement", "LeftHandSideExpression", tokenizer.current.start);
+            }
+        }
+        tokenizer.next();
+        const expression = parseExpression(tokenizer);
+        const pe = tokenizer.current;
+        if (pe.type !== "punctuator" || pe.value !== ")") {
+            throw new UnexpectedTokenError("ForStatement", ")", begin);
+        }
+        tokenizer.next();
+        const statement = parseStatement(tokenizer);
+        return {
+            type: "forInStatement",
+            initialization: forInIntialization,
+            expression,
+            statement,
+            start: begin.start,
+            end: tokenizer.prevPosition,
+        };
+    } else {
+        throw new UnexpectedTokenError("ForStatement", "in or ;", begin);
+    }
+}
+
+function parseContinueStatement(tokenizer: Tokenizer): ContinueStatement {
+    const token = tokenizer.current;
+    if (token.type !== "keyword" || token.value !== "continue") {
+        throw new UnexpectedTokenError("ContinueStatement", "continue", token);
+    }
+    tokenizer.next();
+    if (!parseSemicolon(tokenizer)) {
+        throw new UnexpectedTokenError("ContinueStatement", "; or } or LineTerminator", token);
+    }
+    return {
+        type: "continueStatement",
+        start: token.start,
+        end: tokenizer.prevPosition,
+    };
+}
+
+function parseBreakStatement(tokenizer: Tokenizer): BreakStatement {
+    const token = tokenizer.current;
+    if (token.type !== "keyword" || token.value !== "break") {
+        throw new UnexpectedTokenError("BreakStatement", "break", token);
+    }
+    tokenizer.next();
+    if (!parseSemicolon(tokenizer)) {
+        throw new UnexpectedTokenError("BreakStatement", "; or } or LineTerminator", token);
+    }
+    return {
+        type: "breakStatement",
+        start: token.start,
+        end: tokenizer.prevPosition,
+    };
+}
+
+function parseReturnStatement(tokenizer: Tokenizer): ReturnStatement {
+    const token = tokenizer.current;
+    if (token.type !== "keyword" || token.value !== "return") {
+        throw new UnexpectedTokenError("ReturnStatement", "return", token);
+    }
+    tokenizer.next();
+    if (!parseSemicolon(tokenizer)) {
+        const expression = parseExpression(tokenizer);
+        if (!parseSemicolon(tokenizer)) {
+            throw new UnexpectedTokenError("ReturnStatement", "; or } or LineTerminator", token);
+        }
+        return {
+            type: "returnStatement",
+            expression,
+            start: token.start,
+            end: tokenizer.prevPosition,
+        };
+    }
+    return {
+        type: "returnStatement",
+        expression: undefined,
+        start: token.start,
+        end: tokenizer.prevPosition,
+    };
+}
+
+function parseWithStatement(tokenizer: Tokenizer): WithStatement {
+    const begin = tokenizer.current;
+    if (begin.type !== "keyword" || begin.value !== "with") {
+        throw new UnexpectedTokenError("WithStatement", "with", begin);
+    }
+    const ps = tokenizer.next();
+    if (ps.type !== "punctuator" || ps.value !== "(") {
+        throw new UnexpectedTokenError("WithStatement", "(", ps);
+    }
+    tokenizer.next();
+    const expression = parseExpression(tokenizer);
+    const pe = tokenizer.current;
+    if (pe.type !== "punctuator" || pe.value !== ")") {
+        throw new UnexpectedTokenError("WithStatement", ")", pe);
+    }
+    tokenizer.next();
+    const statement = parseStatement(tokenizer);
+    return {
+        type: "withStatement",
+        expression,
+        statement,
         start: begin.start,
         end: tokenizer.prevPosition,
     };

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "vitest"
+    "test": "npx --node-options=--stack_trace_limit=200 vitest"
   },
   "author": "otya",
   "license": "MIT",
