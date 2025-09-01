@@ -1,9 +1,9 @@
 {
-  "name": "bml-es2",
+  "name": "es2",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "npx --node-options=--stack_trace_limit=200 vitest"
+    "test": "npx --node-options=--stack_trace_limit=200 vitest --disable-console-intercept"
   },
   "author": "otya",
   "license": "MIT",

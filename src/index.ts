@@ -284,7 +284,7 @@ class Reader {
         this.index++;
         const char = this.source.charAt(this.index);
         if (char === "\n") {
-            this.column = 1;
+            this.column = 0;
             this.line++;
         }
         return char;
@@ -452,7 +452,7 @@ function parseDecimalLiteral(reader: Reader, start: Position): NumericLiteral {
         parseExponentPart(reader);
     }
     const value = reader.substring(start, reader.position);
-    return { type: "numericLiteral", value: parseFloat(value), start, end: reader.prevPosition };
+    return { type: "numericLiteral", value: parseFloat(value), start, end: reader.prevPosition }; // l
 }
 
 function parseDecimalDigits(reader: Reader) {
@@ -1198,7 +1198,7 @@ class Tokenizer {
         this.iterator = tokenize(source);
         while (true) {
             this._current = this.iterator.next().value;
-            if (this._current?.type !== "lineTerminator") {
+            if (this._current.type !== "lineTerminator") {
                 break;
             }
         }
@@ -1207,7 +1207,7 @@ class Tokenizer {
         this._prevPosition = this._current.end;
         while (true) {
             this._current = this.iterator.next().value;
-            if (this._current?.type !== "lineTerminator") {
+            if (this._current.type !== "lineTerminator") {
                 return this._current;
             }
         }
@@ -1389,12 +1389,12 @@ function parseBlock(tokenizer: Tokenizer): Block {
 function parseVariableStatement(tokenizer: Tokenizer): VariableStatement {
     const begin = tokenizer.current;
     if (begin.type !== "keyword" || begin.value !== "var") {
-        throw new UnexpectedTokenError("VariableDeclaration", "var", begin);
+        throw new UnexpectedTokenError("VariableStatement", "var", begin);
     }
     tokenizer.next();
     const variableDeclarationList = parseVariableDeclarationList(tokenizer);
     if (!parseSemicolon(tokenizer)) {
-        throw new UnexpectedTokenError("ExpressionStatement", "; or } or LineTerminator", tokenizer.current);
+        throw new UnexpectedTokenError("VariableStatement", "; or } or LineTerminator", tokenizer.current);
     }
     return {
         type: "variableStatement",
@@ -1464,16 +1464,16 @@ function parseSemicolon(tokenizer: Tokenizer): boolean {
 
 function parseExpressionStatement(tokenizer: Tokenizer): ExpressionStatement {
     const begin = tokenizer.current;
-    const statement: ExpressionStatement = {
-        type: "expressionStatement",
-        expression: parseExpression(tokenizer),
-        start: begin.start,
-        end: tokenizer.prevPosition,
-    };
+    const expression = parseExpression(tokenizer);
     if (!parseSemicolon(tokenizer)) {
         throw new UnexpectedTokenError("ExpressionStatement", "; or } or LineTerminator", tokenizer.current);
     }
-    return statement;
+    return {
+        type: "expressionStatement",
+        expression,
+        start: begin.start,
+        end: tokenizer.prevPosition,
+    };
 }
 
 function parseEmptyStatement(tokenizer: Tokenizer): EmptyStatement {
@@ -2397,6 +2397,776 @@ function parseExpression(tokenizer: Tokenizer): Expression {
             };
         } else {
             return left;
+        }
+    }
+}
+
+type Value = null | undefined | number | string | boolean | InterpreterObject;
+
+type Completion = NormalCompletion | ReturnCompletion | AbruptCompletion;
+
+type NormalCompletion =
+    | {
+          type: "normalCompletion";
+          hasValue: false;
+      }
+    | {
+          type: "normalCompletion";
+          hasValue: true;
+          value: Value;
+      };
+
+type ReturnCompletion =
+    | {
+          type: "returnCompletion";
+          hasValue: false;
+      }
+    | {
+          type: "returnCompletion";
+          hasValue: true;
+          value: Value;
+      };
+
+type AbruptCompletion =
+    | {
+          type: "abruptCompletion";
+          cause: "break";
+          hasValue: false;
+      }
+    | {
+          type: "abruptCompletion";
+          cause: "break";
+          hasValue: true;
+          value: Value;
+      }
+    | {
+          type: "abruptCompletion";
+          cause: "continue";
+          hasValue: false;
+      }
+    | {
+          type: "abruptCompletion";
+          cause: "continue";
+          hasValue: true;
+          value: Value;
+      };
+
+type Reference =
+    | null
+    | undefined
+    | number
+    | boolean
+    | string
+    | Value
+    | {
+          baseObject: Value;
+          name: string;
+      };
+
+type Property = {
+    readOnly: boolean;
+    dontEnum: boolean;
+    dontDelete: boolean;
+    internal: boolean;
+    value: Value;
+};
+
+type DefaultValueHint = "string" | "number";
+
+type NativeFunction = (ctx: Context, self: Value, args: Value[]) => Generator<unknown, Value>;
+type InterpreterObject = {
+    internalProperties: {
+        prototype: InterpreterObject | null;
+        class: string;
+        value: Value;
+        get?: (ctx: Context, self: Value, propertyName: string) => Generator<unknown, Value>;
+        put?: (ctx: Context, self: Value, propertyName: string, value: Value) => Generator<unknown, unknown>;
+        canPut?: (ctx: Context, self: Value, propertyName: string) => boolean;
+        hasProperty?: (ctx: Context, self: Value, propertyName: string) => boolean;
+        delete?: (ctx: Context, self: Value, propertyName: string) => void;
+        defaultValue?: (ctx: Context, self: Value, hint: DefaultValueHint) => Generator<unknown, Value>;
+        construct?: NativeFunction;
+        call?: NativeFunction;
+    };
+    properties: Map<string, Property>;
+};
+
+function shallowCopyObject(obj: InterpreterObject): InterpreterObject {
+    return {
+        internalProperties: { ...obj.internalProperties },
+        properties: new Map(obj.properties),
+    };
+}
+
+function isPrimitive(value: Value): value is undefined | null | boolean | number | string {
+    return (
+        value === undefined ||
+        value === null ||
+        typeof value === "boolean" ||
+        typeof value === "number" ||
+        typeof value === "string"
+    );
+}
+
+function isObject(value: Value): value is InterpreterObject {
+    return !isPrimitive(value);
+}
+
+type Scope = {
+    parent: Scope | undefined;
+    object: InterpreterObject;
+};
+
+type Context = {
+    runtime: Interpreter;
+    scope: Scope;
+    this: Value;
+};
+
+export class Interpreter {
+    private createFunction(func: NativeFunction): Value {
+        return {
+            internalProperties: {
+                prototype: this.functionPrototype,
+                class: "Function",
+                value: undefined,
+                call: func,
+            },
+            properties: new Map(),
+        };
+    }
+    private toObject(value: Value) {
+        switch (typeof value) {
+            case "string":
+            case "number":
+            case "boolean":
+                throw new TypeError("FIXME");
+            case "undefined":
+                throw new TypeError();
+            case "object":
+                if (value === null) {
+                    throw new TypeError();
+                }
+                return value;
+            case "bigint":
+            case "symbol":
+            case "function":
+                throw new TypeError();
+        }
+    }
+
+    private *getProperty(value: Value, name: string): Generator<unknown, Value> {
+        if (isPrimitive(value)) throw new Error("NOTIMPL");
+        let o: InterpreterObject | null = value;
+        while (o != null) {
+            if (o.properties.has(name)) {
+                return o.properties.get(name)?.value;
+            }
+            o = o.internalProperties.prototype;
+        }
+        return undefined;
+    }
+
+    hasProperty(obj: InterpreterObject, name: string): boolean {
+        let o: InterpreterObject | null = obj;
+        while (o != null) {
+            if (o.properties.has(name)) {
+                return true;
+            }
+            o = o.internalProperties.prototype;
+        }
+        return false;
+    }
+
+    private *callObject(ctx: Context, obj: InterpreterObject, self: Value, args: Value[]): Generator<unknown, Value> {
+        const call = obj.internalProperties.call;
+        if (call == null) {
+            throw new Error("call");
+        }
+        return yield* call(ctx, self, args);
+    }
+
+    private *defaultValue(ctx: Context, value: Value, hint: DefaultValueHint): Generator<unknown, Value> {
+        if (hint === "string") {
+            const toString = yield* this.getProperty(value, "toString");
+            if (isObject(toString)) {
+                const result = yield* this.callObject(ctx, toString, value, []);
+                if (isPrimitive(result)) {
+                    return result;
+                }
+            }
+            const valueOf = yield* this.getProperty(value, "valueOf");
+            if (isObject(valueOf)) {
+                const result = yield* this.callObject(ctx, valueOf, value, []);
+                if (isPrimitive(result)) {
+                    return result;
+                }
+            }
+        } else {
+            const valueOf = yield* this.getProperty(value, "valueOf");
+            if (isObject(valueOf)) {
+                const result = yield* this.callObject(ctx, valueOf, value, []);
+                if (isPrimitive(result)) {
+                    return result;
+                }
+            }
+            const toString = yield* this.getProperty(value, "toString");
+            if (isObject(toString)) {
+                const result = yield* this.callObject(ctx, toString, value, []);
+                if (isPrimitive(result)) {
+                    return result;
+                }
+            }
+        }
+        throw new TypeError("ToPrimitive failed");
+    }
+
+    private *toPrimitive(ctx: Context, value: Value, preferredType: DefaultValueHint): Generator<unknown, Value> {
+        if (isPrimitive(value)) {
+            return value;
+        }
+        return yield* this.defaultValue(ctx, value, preferredType);
+    }
+
+    private *toString(ctx: Context, value: Value): Generator<unknown, string> {
+        if (value === undefined) {
+            return "undefined";
+        }
+        if (value === null) {
+            return "null";
+        }
+        if (typeof value === "boolean") {
+            return value ? "true" : "false";
+        }
+        if (typeof value === "number") {
+            return String(value); // l
+        }
+        if (typeof value === "string") {
+            return value; // l
+        }
+        return yield* this.toString(ctx, yield* this.toPrimitive(ctx, value, "string"));
+    }
+
+    private *toNumber(ctx: Context, value: Value): Generator<unknown, number> {
+        if (value === undefined) {
+            return NaN;
+        }
+        if (value === null) {
+            return 0;
+        }
+        if (typeof value === "boolean") {
+            return value ? 1 : 0;
+        }
+        if (typeof value === "number") {
+            return value;
+        }
+        if (typeof value === "string") {
+            return Number(value); // l
+        }
+        return yield* this.toNumber(ctx, yield* this.toPrimitive(ctx, value, "number"));
+    }
+
+    private newObject(): Value {
+        return {
+            internalProperties: {
+                prototype: shallowCopyObject(this.objectPrototype),
+                class: "Object",
+                value: undefined,
+            },
+            properties: new Map(),
+        };
+    }
+
+    private objectPrototype: InterpreterObject = {
+        internalProperties: {
+            prototype: null,
+            class: "Object",
+            value: undefined,
+            *call(self, args) {
+                return null;
+            },
+            *construct(self, args) {
+                return null;
+            },
+        },
+        properties: new Map([
+            [
+                "constructor",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: null,
+                },
+            ],
+        ]),
+    };
+    private functionPrototype: InterpreterObject = {
+        internalProperties: {
+            prototype: this.objectPrototype,
+            class: "Function",
+            value: undefined,
+            *call(_ctx, _self, _args) {
+                return undefined;
+            },
+        },
+        properties: new Map([
+            [
+                "length",
+                {
+                    readOnly: true,
+                    dontEnum: true,
+                    dontDelete: true,
+                    internal: false,
+                    value: 0,
+                },
+            ],
+            [
+                "constructor",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: null,
+                },
+            ],
+            [
+                "toString",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: null,
+                },
+            ],
+        ]),
+    };
+    private object: InterpreterObject = {
+        internalProperties: {
+            class: "Object",
+            value: undefined,
+            prototype: this.functionPrototype,
+            *call(ctx, _self, args) {
+                if (args[0] == null) {
+                    return ctx.runtime.newObject();
+                }
+                return ctx.runtime.toObject(args[0]);
+            },
+            *construct(ctx, _self, _args) {
+                return ctx.runtime.newObject();
+            },
+        },
+        properties: new Map([
+            [
+                "length",
+                {
+                    readOnly: true,
+                    dontEnum: true,
+                    dontDelete: true,
+                    internal: false,
+                    value: 1,
+                },
+            ],
+            [
+                "prototype",
+                {
+                    readOnly: true,
+                    dontEnum: true,
+                    dontDelete: true,
+                    internal: false,
+                    value: this.objectPrototype,
+                },
+            ],
+        ]),
+    };
+    private function: InterpreterObject = {
+        internalProperties: {
+            prototype: this.functionPrototype,
+            class: "Function",
+            value: undefined,
+            // call
+            // construct
+        },
+        properties: new Map([
+            [
+                "prototype",
+                {
+                    readOnly: true,
+                    dontEnum: true,
+                    dontDelete: true,
+                    internal: false,
+                    value: this.functionPrototype,
+                },
+            ],
+            [
+                "length",
+                {
+                    readOnly: true,
+                    dontEnum: true,
+                    dontDelete: true,
+                    internal: false,
+                    value: 1,
+                },
+            ],
+        ]),
+    };
+    private global: InterpreterObject = {
+        internalProperties: {
+            prototype: null,
+            class: "Global",
+            value: undefined,
+        },
+        properties: new Map([
+            [
+                "NaN",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: NaN,
+                },
+            ],
+            [
+                "Infinity",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: Infinity,
+                },
+            ],
+            [
+                "Object",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: this.object,
+                },
+            ],
+            [
+                "Function",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: this.function,
+                },
+            ],
+            [
+                "sleep",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: this.createFunction(function* sleep() {
+                        return yield new Promise((resolve) => {
+                            setTimeout(() => resolve("hello"), 1000);
+                        });
+                    }),
+                },
+            ],
+        ]),
+    };
+    private globalScope: Scope = {
+        parent: undefined,
+        object: this.global,
+    };
+    private defineFunction(functionDeclaration: FunctionDeclaration) {}
+
+    private toBoolean(value: Value): boolean {
+        if (value === undefined || value === null) {
+            return false;
+        }
+        if (typeof value === "boolean") {
+            return value;
+        }
+        if (typeof value === "number") {
+            if (isNaN(value) || value === 0) {
+                return false;
+            }
+            return true;
+        }
+        if (typeof value === "string") {
+            return value !== "";
+        }
+        return true;
+    }
+
+    *runBlock(ctx: Context, block: Block): Generator<unknown, Completion> {
+        let completion1: Completion = {
+            type: "normalCompletion",
+            hasValue: false,
+        };
+        for (const statement of block.statementList) {
+            if (completion1.type === "abruptCompletion") {
+                break;
+            }
+            const completion3 = yield* this.runStatement(ctx, statement);
+            if (completion3.hasValue || !completion1.hasValue) {
+                completion1 = completion3;
+                continue;
+            }
+            if (completion3.type === "abruptCompletion" && completion3.cause === "break") {
+                completion1 = {
+                    type: "abruptCompletion",
+                    cause: "break",
+                    hasValue: true,
+                    value: completion1.value,
+                };
+                continue;
+            }
+            if (completion3.type === "abruptCompletion" && completion3.cause === "continue") {
+                completion1 = {
+                    type: "abruptCompletion",
+                    cause: "break",
+                    hasValue: true,
+                    value: completion1.value,
+                };
+                continue;
+            }
+            completion1 = {
+                type: "normalCompletion",
+                hasValue: true,
+                value: completion1.value,
+            };
+        }
+        return completion1;
+    }
+
+    *referenceGetValue(reference: Reference): Generator<unknown, Value> {
+        if (reference == null || typeof reference !== "object" || !("name" in reference)) {
+            return reference;
+        }
+        if (reference.baseObject == null) {
+            throw new ReferenceError(`${reference.name}`);
+        }
+        return yield* this.getProperty(reference.baseObject, reference.name);
+    }
+
+    *runEmptyStatement(_ctx: Context, _statement: EmptyStatement): Generator<unknown, Completion> {
+        return {
+            type: "normalCompletion",
+            hasValue: false,
+        };
+    }
+
+    resolveIdentifier(scope: Scope, name: string): Reference {
+        let s: Scope | undefined = scope;
+        while (s != null) {
+            if (this.hasProperty(s.object, name)) {
+                return {
+                    baseObject: s.object,
+                    name,
+                };
+            }
+            s = s.parent;
+        }
+        return {
+            baseObject: null,
+            name,
+        };
+    }
+
+    *evaluateExpression(ctx: Context, expression: Expression): Generator<unknown, Reference> {
+        switch (expression.type) {
+            case "literalExpression":
+                return expression.value;
+            case "thisExpression":
+                return ctx.this;
+            case "identifierExpression": {
+                return this.resolveIdentifier(ctx.scope, expression.name);
+            }
+            case "groupingOperator": {
+                return yield* this.evaluateExpression(ctx, expression.expression);
+            }
+            case "memberOperator": {
+                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
+                if ("name" in expression) {
+                    return {
+                        baseObject: this.toObject(left),
+                        name: expression.name,
+                    };
+                } else {
+                    const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
+                    return {
+                        baseObject: this.toObject(left),
+                        name: yield* this.toString(ctx, right),
+                    };
+                }
+            }
+            case "newOperator":
+            case "callOperator":
+            case "postfixIncrementOperator":
+            case "postfixDecrementOperator":
+            case "deleteOperator":
+            case "voidOperator":
+            case "typeofOperator":
+            case "prefixIncrementOperator":
+            case "prefixDecrementOperator":
+            case "unaryPlusOperator":
+            case "unaryMiusOperator":
+            case "bitwiseNotOperator":
+            case "logicalNotOperator":
+                break;
+            case "multiplyOperator": {
+                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
+                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
+                return (yield* this.toNumber(ctx, left)) * (yield* this.toNumber(ctx, right));
+            }
+            case "divideOperator": {
+                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
+                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
+                return (yield* this.toNumber(ctx, left)) / (yield* this.toNumber(ctx, right));
+            }
+            case "moduloOperator": {
+                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
+                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
+                return (yield* this.toNumber(ctx, left)) % (yield* this.toNumber(ctx, right));
+            }
+            case "addOperator": {
+                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
+                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
+                // FIXME Date
+                const primitiveLeft = yield* this.toPrimitive(ctx, left, "number");
+                const primitiveRight = yield* this.toPrimitive(ctx, right, "number");
+                if (typeof primitiveLeft === "string" || typeof primitiveRight === "string") {
+                    return (yield* this.toString(ctx, primitiveLeft)) + (yield* this.toString(ctx, primitiveRight));
+                }
+                return (yield* this.toNumber(ctx, primitiveLeft)) + (yield* this.toNumber(ctx, primitiveRight));
+            }
+            case "subtractOperator": {
+                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
+                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
+                return (yield* this.toNumber(ctx, left)) - (yield* this.toNumber(ctx, right));
+            }
+            case "leftShiftOperator": {
+                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
+                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
+                return (yield* this.toNumber(ctx, left)) << (yield* this.toNumber(ctx, right)); // l
+            }
+            case "signedRightShiftOperator": {
+                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
+                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
+                return (yield* this.toNumber(ctx, left)) >> (yield* this.toNumber(ctx, right)); // l
+            }
+            case "unsignedRightShiftOperator": {
+                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
+                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
+                return (yield* this.toNumber(ctx, left)) >>> (yield* this.toNumber(ctx, right)); // l
+            }
+            case "lessThanOperator":
+            case "greaterThanOperator":
+            case "lessThanOrEqualOperator":
+            case "greaterThanOrEqualOperator":
+            case "equalsOperator":
+            case "doesNotEqualsOperator":
+            case "bitwiseAndOperator":
+            case "bitwiseXorOperator":
+            case "bitwiseOrOperator":
+            case "logicalAndOperator":
+            case "logicalOrOperator":
+            case "conditionalOperator":
+            case "assignmentOperator":
+            case "commaOperator":
+                break;
+        }
+        throw new Error();
+    }
+
+    *runExpressionStatement(ctx: Context, statement: ExpressionStatement): Generator<unknown, Completion> {
+        const value = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, statement.expression));
+        return {
+            type: "normalCompletion",
+            hasValue: true,
+            value,
+        };
+    }
+
+    *runStatement(ctx: Context, statement: Statement): Generator<unknown, Completion> {
+        switch (statement.type) {
+            case "block":
+                return yield* this.runBlock(ctx, statement);
+            case "variableStatement":
+                throw new Error();
+            case "emptyStatement":
+                return yield* this.runEmptyStatement(ctx, statement);
+            case "expressionStatement":
+                return yield* this.runExpressionStatement(ctx, statement);
+            case "ifStatement":
+            case "whileStatement":
+            case "forStatement":
+            case "forInStatement":
+            case "continueStatement":
+                return {
+                    type: "abruptCompletion",
+                    cause: "continue",
+                    hasValue: false,
+                };
+            case "breakStatement":
+                return {
+                    type: "abruptCompletion",
+                    cause: "break",
+                    hasValue: false,
+                };
+            case "returnStatement":
+            case "withStatement":
+                throw new Error();
+            default:
+                throw new Error();
+        }
+    }
+
+    private *run(source: string): Generator<unknown, Completion> {
+        const program = parse(source);
+        for (const element of program.sourceElements) {
+            if (element.type !== "functionDeclaration") {
+                continue;
+            }
+            this.defineFunction(element);
+        }
+        let completion: Completion = {
+            type: "normalCompletion",
+            hasValue: false,
+        };
+        const context: Context = {
+            runtime: this,
+            scope: this.globalScope,
+            this: this.globalScope.object,
+        };
+        for (const element of program.sourceElements) {
+            if (element.type === "functionDeclaration") {
+                continue;
+            }
+            const result = yield* this.runStatement(context, element);
+            if (result.hasValue) {
+                completion = result;
+            }
+        }
+        return completion;
+    }
+
+    async runAsync(source: string): Promise<Completion> {
+        const iter = this.run(source);
+        let lastResult: any = undefined;
+        while (true) {
+            const { value, done } = iter.next(lastResult);
+            if (value instanceof Promise) {
+                lastResult = await value;
+            } else {
+                lastResult = undefined;
+            }
+            if (done) {
+                return value;
+            }
         }
     }
 }

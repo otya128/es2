@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { tokenize, Token, parse, SourceElement, Expression, Statement, Program } from ".";
+import { tokenize, Token, parse, SourceElement, Expression, Statement, Program, Interpreter } from ".";
 
 function filterByValue(tokens: Iterable<Token>): (string | null | boolean | number)[] {
     return [...tokens].map((x) => x.value);
@@ -274,6 +274,7 @@ test("parser", () => {
     ]);
     expect(astToString(parse("new abc"))).toStrictEqual(["(expr (new-no-args abc))"]);
     expect(astToString(parse("new abc()"))).toStrictEqual(["(expr (new abc))"]);
+    expect(astToString(parse("new new abc()"))).toStrictEqual(["(expr (new-no-args (new abc)))"]);
     expect(astToString(parse("new abc(1)"))).toStrictEqual(["(expr (new abc 1))"]);
     expect(astToString(parse("new new abc(1)(2)"))).toStrictEqual(["(expr (new (new abc 1) 2))"]);
     expect(astToString(parse("new abc.def"))).toStrictEqual(["(expr (new-no-args (member-ident abc def)))"]);
@@ -330,6 +331,7 @@ test("parser", () => {
     expect(astToString(parse("abc || def"))).toStrictEqual(["(expr (|| abc def))"]);
     expect(astToString(parse("1 ? 2 : 3"))).toStrictEqual(["(expr (if-expr 1 2 3))"]);
     expect(astToString(parse("abc = def"))).toStrictEqual(["(expr (= abc def))"]);
+    expect(astToString(parse("abc = def /= 123"))).toStrictEqual(["(expr (= abc (/= def 123)))"]);
     expect(astToString(parse("abc, def"))).toStrictEqual(["(expr (comma abc def))"]);
     expect(astToString(parse("abc, def, ghi"))).toStrictEqual(["(expr (comma (comma abc def) ghi))"]);
     expect(astToString(parse("1+1"))).toStrictEqual(["(expr (+ 1 1))"]);
@@ -980,11 +982,11 @@ a /= 2;
                             type: "expressionStatement",
                             expression: {
                                 type: "assignmentOperator",
-                                operator: "/=",
                                 left: {
                                     type: "identifierExpression",
                                     name: "a",
                                 },
+                                operator: "/=",
                                 right: {
                                     type: "literalExpression",
                                     value: 2,
@@ -996,4 +998,133 @@ a /= 2;
             },
         ],
     } as Program);
+    expect(
+        parse(String.raw`anc/=2;function func(a, b){
+anc /= 2;
+        }`)
+    ).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "expressionStatement",
+                expression: {
+                    type: "assignmentOperator",
+                    left: {
+                        type: "identifierExpression",
+                        name: "anc",
+                        start: { index: 0, line: 1, column: 1 },
+                        end: { index: 2, line: 1, column: 3 },
+                    },
+                    operator: "/=",
+                    right: {
+                        type: "literalExpression",
+                        value: 2,
+                        start: { index: 5, line: 1, column: 6 },
+                        end: { index: 5, line: 1, column: 6 },
+                    },
+                    start: { index: 0, line: 1, column: 1 },
+                    end: { index: 5, line: 1, column: 6 },
+                },
+                start: { index: 0, line: 1, column: 1 },
+                end: { index: 6, line: 1, column: 7 },
+            },
+            {
+                type: "functionDeclaration",
+                name: "func",
+                parameters: ["a", "b"],
+                block: {
+                    type: "block",
+                    statementList: [
+                        {
+                            type: "expressionStatement",
+                            expression: {
+                                type: "assignmentOperator",
+                                left: {
+                                    type: "identifierExpression",
+                                    name: "anc",
+                                    start: { index: 28, line: 2, column: 1 },
+                                    end: { index: 30, line: 2, column: 3 },
+                                },
+                                operator: "/=",
+                                right: {
+                                    type: "literalExpression",
+                                    value: 2,
+                                    start: { index: 35, line: 2, column: 8 },
+                                    end: { index: 35, line: 2, column: 8 },
+                                },
+                                start: { index: 28, line: 2, column: 1 },
+                                end: { index: 35, line: 2, column: 8 },
+                            },
+                            start: { index: 28, line: 2, column: 1 },
+                            end: { index: 36, line: 2, column: 9 },
+                        },
+                    ],
+                    start: { index: 26, line: 1, column: 27 },
+                    end: { index: 46, line: 3, column: 9 },
+                },
+                start: { index: 7, line: 1, column: 8 },
+                end: { index: 46, line: 3, column: 9 },
+            },
+        ],
+        start: { index: 0, line: 1, column: 1 },
+        end: { index: 47, line: 3, column: 10 },
+    });
+});
+
+test("interpreter", async () => {
+    expect(await new Interpreter().runAsync("1*2+3*4;")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1*2+3*4,
+    });
+    expect(await new Interpreter().runAsync("1*(2+3)*4;")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1*(2+3)*4,
+    });
+    expect(await new Interpreter().runAsync("1+'2';")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "12",
+    });
+    expect(await new Interpreter().runAsync("'1'+'2';")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "12",
+    });
+    expect(await new Interpreter().runAsync("'1'+2;")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "12",
+    });
+    expect(await new Interpreter().runAsync("'10'*2;")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 20,
+    });
+    expect(await new Interpreter().runAsync("NaN;")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
+    expect(await new Interpreter().runAsync("Object.length;")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await new Interpreter().runAsync("this.Object.length;")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await new Interpreter().runAsync("Object['length'];")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await new Interpreter().runAsync("this.Object['length'];")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
 });
