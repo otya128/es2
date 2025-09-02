@@ -3710,8 +3710,20 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
             return undefined;
         }
-        case "typeofOperator":
-            break;
+        case "typeofOperator": {
+            const ref = yield* evaluateExpression(ctx, expression.expression);
+            if (isReference(ref)) {
+                if (ref.baseObject == null) {
+                    return "undefined";
+                }
+            }
+            const value = yield* referenceGetValue(ref);
+            const t = getType(value);
+            if (t === "null") {
+                return "object";
+            }
+            return t;
+        }
         case "prefixIncrementOperator": {
             const ref = yield* evaluateExpression(ctx, expression.expression);
             const value = yield* referenceGetValue(ref);

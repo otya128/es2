@@ -2505,4 +2505,60 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 1,
     });
+    expect(await runAsync(String.raw`typeof 1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "number",
+    });
+    expect(await runAsync(String.raw`typeof a`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "undefined",
+    });
+    await expect(runAsync(String.raw`typeof a.b`)).rejects.toThrow();
+    expect(await runAsync(String.raw`typeof Object.a`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "undefined",
+    });
+    expect(await runAsync(String.raw`typeof 'a'`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "string",
+    });
+    expect(await runAsync(String.raw`typeof null`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "object",
+    });
+    expect(await runAsync(String.raw`typeof true`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "boolean",
+    });
+    expect(await runAsync(String.raw`typeof new Number()`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "object",
+    });
+    expect(await runAsync(String.raw`typeof Number`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "function",
+    });
+    expect(await runAsync(String.raw`typeof Object`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "function",
+    });
+    expect(await runAsync(String.raw`typeof Object.prototype`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "object",
+    });
+    expect(await runAsync(String.raw`typeof Object.prototype.constructor`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "function",
+    });
 });
