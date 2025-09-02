@@ -3666,14 +3666,42 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             }
             return yield* call(ctx, self, args);
         }
-        case "postfixIncrementOperator":
-        case "postfixDecrementOperator":
+        case "postfixIncrementOperator": {
+            const ref = yield* evaluateExpression(ctx, expression.expression);
+            const value = yield* referenceGetValue(ref);
+            const number = yield* toNumber(ctx, value);
+            const computed = number + 1;
+            yield* referencePutValue(ctx, ref, computed);
+            return number;
+        }
+        case "postfixDecrementOperator": {
+            const ref = yield* evaluateExpression(ctx, expression.expression);
+            const value = yield* referenceGetValue(ref);
+            const number = yield* toNumber(ctx, value);
+            const computed = number - 1;
+            yield* referencePutValue(ctx, ref, computed);
+            return number;
+        }
         case "deleteOperator":
         case "voidOperator":
         case "typeofOperator":
-        case "prefixIncrementOperator":
-        case "prefixDecrementOperator":
             break;
+        case "prefixIncrementOperator": {
+            const ref = yield* evaluateExpression(ctx, expression.expression);
+            const value = yield* referenceGetValue(ref);
+            const number = yield* toNumber(ctx, value);
+            const computed = number + 1;
+            yield* referencePutValue(ctx, ref, computed);
+            return computed;
+        }
+        case "prefixDecrementOperator": {
+            const ref = yield* evaluateExpression(ctx, expression.expression);
+            const value = yield* referenceGetValue(ref);
+            const number = yield* toNumber(ctx, value);
+            const computed = number - 1;
+            yield* referencePutValue(ctx, ref, computed);
+            return computed;
+        }
         case "unaryPlusOperator": {
             const value = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
             const number = yield* toNumber(ctx, value);
