@@ -3474,6 +3474,23 @@ export class Interpreter {
         };
     }
 
+    *runWithStatement(ctx: Context, statement: WithStatement): Generator<unknown, Completion> {
+        const ref = yield* this.evaluateExpression(ctx, statement.expression);
+        const value = yield* this.referenceGetValue(ref);
+        const object = this.toObject(value);
+        const withScope: Scope = {
+            parent: ctx.scope,
+            object,
+        };
+        const withContext: Context = {
+            runtime: ctx.runtime,
+            scope: withScope,
+            this: ctx.this,
+            global: ctx.global,
+        };
+        return yield* this.runStatement(withContext, statement.statement);
+    }
+
     *runStatement(ctx: Context, statement: Statement): Generator<unknown, Completion> {
         switch (statement.type) {
             case "block":
@@ -3501,8 +3518,9 @@ export class Interpreter {
                     hasValue: false,
                 };
             case "returnStatement":
-            case "withStatement":
                 throw new Error();
+            case "withStatement":
+                return yield* this.runWithStatement(ctx, statement);
             default:
                 throw new Error();
         }

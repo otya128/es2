@@ -1395,4 +1395,30 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 457,
     });
+    expect(
+        await new Interpreter().runAsync(String.raw`
+            with (new Object) {
+                hoge = 1;
+            }
+            hoge;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await new Interpreter().runAsync(String.raw`
+            o = new Object;
+            o.a = 1;
+            with (o) {
+                a = 2;
+            }
+            o.a
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
 });
