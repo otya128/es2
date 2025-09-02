@@ -1188,6 +1188,47 @@ export type CommaOperator = {
     end: Position;
 };
 
+function visitStatement(statement: Statement, visitor: (statement: Statement) => void) {
+    visitor(statement);
+    switch (statement.type) {
+        case "block":
+            for (const s of statement.statementList) {
+                visitStatement(s, visitor);
+            }
+            break;
+        case "forStatement":
+        case "forInStatement": {
+            if (statement.initialization?.type === "variableStatement") {
+                visitStatement(statement.initialization, visitor);
+            }
+            visitStatement(statement.statement, visitor);
+            break;
+        }
+        case "whileStatement":
+        case "withStatement":
+            visitStatement(statement.statement, visitor);
+            break;
+        case "variableStatement":
+        case "emptyStatement":
+        case "expressionStatement":
+            break;
+        case "ifStatement": {
+            visitStatement(statement.thenStatement, visitor);
+            if (statement.elseStatement != null) {
+                visitStatement(statement.elseStatement, visitor);
+            }
+        }
+        case "continueStatement":
+        case "breakStatement":
+        case "returnStatement":
+            break;
+        default: {
+            const _: never = statement;
+            throw new Error("unreachable");
+        }
+    }
+}
+
 class Tokenizer {
     private iterator: Generator<Token, EndToken>;
     private _current: Token;
@@ -2545,13 +2586,6 @@ function* putProperty(
     return;
 }
 
-function shallowCopyObject(obj: InterpreterObject): InterpreterObject {
-    return {
-        internalProperties: { ...obj.internalProperties },
-        properties: new Map(obj.properties),
-    };
-}
-
 function isPrimitive(value: Value): value is undefined | null | boolean | number | string {
     return (
         value === undefined ||
@@ -2623,6 +2657,7 @@ export class Interpreter {
             case "bigint":
             case "symbol":
             case "function":
+            default:
                 throw new TypeError();
         }
     }
@@ -2745,7 +2780,7 @@ export class Interpreter {
     private newObject(): InterpreterObject {
         return {
             internalProperties: {
-                prototype: shallowCopyObject(this.objectPrototype),
+                prototype: this.objectPrototype,
                 class: "Object",
                 value: undefined,
             },
@@ -2802,12 +2837,6 @@ export class Interpreter {
             prototype: null,
             class: "Object",
             value: undefined,
-            *call(self, args) {
-                return null;
-            },
-            *construct(self, args) {
-                return null;
-            },
         },
         properties: new Map([
             [
@@ -3049,6 +3078,13 @@ export class Interpreter {
             return ctx.runtime.newStringObject(value);
         };
         this.stringPrototype = this.newStringObject("");
+        this.stringPrototype.properties.set("constructor", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.stringObject,
+        });
         this.stringPrototype.properties.set("toString", {
             readOnly: false,
             dontEnum: true,
@@ -3098,6 +3134,13 @@ export class Interpreter {
             return ctx.runtime.newNumberObject(value);
         };
         this.numberPrototype = this.newNumberObject(0);
+        this.numberPrototype.properties.set("constructor", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.numberObject,
+        });
         this.numberPrototype.properties.set("toString", {
             readOnly: false,
             dontEnum: true,
@@ -3146,11 +3189,18 @@ export class Interpreter {
             }
             return ctx.runtime.toBoolean(args[0]);
         }, 1);
-        this.booleanObject.internalProperties.construct = function* booleanConstructor(ctx, args) {
+        this.booleanObject.internalProperties.construct = function* booleanConstruct(ctx, args) {
             const value = args.length === 0 ? false : ctx.runtime.toBoolean(args[0]);
             return ctx.runtime.newBooleanObject(value);
         };
         this.booleanPrototype = this.newBooleanObject(false);
+        this.booleanPrototype.properties.set("constructor", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.booleanObject,
+        });
         this.booleanPrototype.properties.set("toString", {
             readOnly: false,
             dontEnum: true,
@@ -3309,12 +3359,10 @@ export class Interpreter {
                 return expression.value;
             case "thisExpression":
                 return ctx.this;
-            case "identifierExpression": {
+            case "identifierExpression":
                 return this.resolveIdentifier(ctx.scope, expression.name);
-            }
-            case "groupingOperator": {
+            case "groupingOperator":
                 return yield* this.evaluateExpression(ctx, expression.expression);
-            }
             case "memberOperator": {
                 const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
                 if ("name" in expression) {
@@ -3467,6 +3515,23 @@ export class Interpreter {
         throw new Error();
     }
 
+    *runVariableStatement(ctx: Context, statement: VariableStatement): Generator<unknown, Completion> {
+        for (const decl of statement.variableDeclarationList) {
+            if (decl.initializer == null) {
+                continue;
+            }
+            const left = this.resolveIdentifier(ctx.scope, decl.name);
+            const rightRef =
+                decl.initializer == null ? undefined : yield* this.evaluateExpression(ctx, decl.initializer);
+            const right = yield* this.referenceGetValue(rightRef);
+            yield* this.referencePutValue(ctx, left, right);
+        }
+        return {
+            type: "normalCompletion",
+            hasValue: false,
+        };
+    }
+
     *runExpressionStatement(ctx: Context, statement: ExpressionStatement): Generator<unknown, Completion> {
         const value = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, statement.expression));
         return {
@@ -3498,7 +3563,7 @@ export class Interpreter {
             case "block":
                 return yield* this.runBlock(ctx, statement);
             case "variableStatement":
-                throw new Error();
+                return yield* this.runVariableStatement(ctx, statement);
             case "emptyStatement":
                 return yield* this.runEmptyStatement(ctx, statement);
             case "expressionStatement":
@@ -3507,6 +3572,7 @@ export class Interpreter {
             case "whileStatement":
             case "forStatement":
             case "forInStatement":
+                throw new Error();
             case "continueStatement":
                 return {
                     type: "abruptCompletion",
@@ -3528,6 +3594,20 @@ export class Interpreter {
         }
     }
 
+    private defineVariable(ctx: Context, statement: VariableStatement) {
+        for (const decl of statement.variableDeclarationList) {
+            if (!ctx.scope.object.properties.has(decl.name)) {
+                ctx.scope.object.properties.set(decl.name, {
+                    readOnly: false,
+                    dontEnum: false,
+                    dontDelete: true,
+                    internal: false,
+                    value: undefined,
+                });
+            }
+        }
+    }
+
     private *run(source: string): Generator<unknown, Completion> {
         const program = parse(source);
         for (const element of program.sourceElements) {
@@ -3546,6 +3626,16 @@ export class Interpreter {
             this: this.globalScope.object,
             global: this.globalScope.object,
         };
+        for (const element of program.sourceElements) {
+            if (element.type === "functionDeclaration") {
+                continue;
+            }
+            visitStatement(element, (statement) => {
+                if (statement.type === "variableStatement") {
+                    this.defineVariable(context, statement);
+                }
+            });
+        }
         for (const element of program.sourceElements) {
             if (element.type === "functionDeclaration") {
                 continue;
