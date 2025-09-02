@@ -1196,11 +1196,14 @@ function visitStatement(statement: Statement, visitor: (statement: Statement) =>
                 visitStatement(s, visitor);
             }
             break;
-        case "forStatement":
-        case "forInStatement": {
+        case "forStatement": {
             if (statement.initialization?.type === "variableStatement") {
                 visitStatement(statement.initialization, visitor);
             }
+            visitStatement(statement.statement, visitor);
+            break;
+        }
+        case "forInStatement": {
             visitStatement(statement.statement, visitor);
             break;
         }
@@ -3768,15 +3771,20 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
     throw new Error();
 }
 
+function* runVariableDeclaration(ctx: Context, declaration: VariableDeclaration): Generator<unknown, void> {
+    if (declaration.initializer == null) {
+        return;
+    }
+    const left = resolveIdentifier(ctx.scope, declaration.name);
+    const rightRef =
+        declaration.initializer == null ? undefined : yield* evaluateExpression(ctx, declaration.initializer);
+    const right = yield* referenceGetValue(rightRef);
+    yield* referencePutValue(ctx, left, right);
+}
+
 function* runVariableStatement(ctx: Context, statement: VariableStatement): Generator<unknown, Completion> {
     for (const decl of statement.variableDeclarationList) {
-        if (decl.initializer == null) {
-            continue;
-        }
-        const left = resolveIdentifier(ctx.scope, decl.name);
-        const rightRef = decl.initializer == null ? undefined : yield* evaluateExpression(ctx, decl.initializer);
-        const right = yield* referenceGetValue(rightRef);
-        yield* referencePutValue(ctx, left, right);
+        yield* runVariableDeclaration(ctx, decl);
     }
     return {
         type: "normalCompletion",
@@ -3878,6 +3886,58 @@ function* runForStatement(ctx: Context, statement: ForStatement): Generator<unkn
     return completion;
 }
 
+function* runForInStatement(ctx: Context, statement: ForInStatement): Generator<unknown, Completion> {
+    if (statement.initialization.type === "variableDeclaration" && statement.initialization.initializer != null) {
+        yield* runVariableDeclaration(ctx, statement.initialization);
+    }
+    let obj = toObject(
+        ctx.realm.intrinsics,
+        yield* referenceGetValue(yield* evaluateExpression(ctx, statement.expression))
+    );
+    let completion: Completion = {
+        type: "normalCompletion",
+        hasValue: false,
+    };
+    const iterated = new Set<string>();
+    while (true) {
+        for (const [name, prop] of obj.properties) {
+            if (prop.dontEnum) {
+                continue;
+            }
+            if (iterated.has(name)) {
+                continue;
+            }
+            iterated.add(name);
+            if (statement.initialization.type === "variableDeclaration") {
+                const ref = resolveIdentifier(ctx.scope, name);
+                yield* referencePutValue(ctx, ref, name);
+            } else {
+                const ref = yield* evaluateExpression(ctx, statement.initialization);
+                yield* referencePutValue(ctx, ref, name);
+            }
+            const result = yield* runStatement(ctx, statement.statement);
+            if (result.hasValue) {
+                completion = {
+                    type: "normalCompletion",
+                    hasValue: true,
+                    value: result.value,
+                };
+            }
+            if (result.type === "abruptCompletion" && result.cause === "break") {
+                break;
+            }
+            if (result.type === "returnCompletion") {
+                return result;
+            }
+        }
+        if (obj.internalProperties.prototype == null) {
+            break;
+        }
+        obj = obj.internalProperties.prototype;
+    }
+    return completion;
+}
+
 function* runWithStatement(ctx: Context, statement: WithStatement): Generator<unknown, Completion> {
     const ref = yield* evaluateExpression(ctx, statement.expression);
     const value = yield* referenceGetValue(ref);
@@ -3911,7 +3971,7 @@ function* runStatement(ctx: Context, statement: Statement): Generator<unknown, C
         case "forStatement":
             return yield* runForStatement(ctx, statement);
         case "forInStatement":
-            throw new Error();
+            return yield* runForInStatement(ctx, statement);
         case "continueStatement":
             return {
                 type: "abruptCompletion",
@@ -3933,8 +3993,8 @@ function* runStatement(ctx: Context, statement: Statement): Generator<unknown, C
     }
 }
 
-function defineVariable(ctx: Context, statement: VariableStatement) {
-    for (const decl of statement.variableDeclarationList) {
+function defineVariable(ctx: Context, list: VariableDeclaration[]) {
+    for (const decl of list) {
         if (!ctx.scope.object.properties.has(decl.name)) {
             ctx.scope.object.properties.set(decl.name, {
                 readOnly: false,
@@ -3978,7 +4038,12 @@ function* run(source: string): Generator<unknown, Completion> {
         }
         visitStatement(element, (statement) => {
             if (statement.type === "variableStatement") {
-                defineVariable(context, statement);
+                defineVariable(context, statement.variableDeclarationList);
+            }
+            if (statement.type === "forInStatement") {
+                if (statement.initialization?.type === "variableDeclaration") {
+                    defineVariable(context, [statement.initialization]);
+                }
             }
         });
     }
