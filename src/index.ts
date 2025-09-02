@@ -2452,7 +2452,7 @@ type AbruptCompletion =
       };
 
 type Reference = {
-    baseObject: Value;
+    baseObject: InterpreterObject | null;
     name: string;
 };
 type RefOrValue = null | undefined | number | boolean | string | Value | Reference;
@@ -2477,23 +2477,71 @@ type Property = {
 
 type DefaultValueHint = "string" | "number";
 
-type NativeFunction = (ctx: Context, self: Value, args: Value[]) => Generator<unknown, Value>;
+type NativeFunction = (ctx: Context, self: InterpreterObject | null, args: Value[]) => Generator<unknown, Value>;
 type InterpreterObject = {
     internalProperties: {
         prototype: InterpreterObject | null;
         class: string;
         value: Value;
-        get?: (ctx: Context, self: Value, propertyName: string) => Generator<unknown, Value>;
-        put?: (ctx: Context, self: Value, propertyName: string, value: Value) => Generator<unknown, unknown>;
-        canPut?: (ctx: Context, self: Value, propertyName: string) => boolean;
-        hasProperty?: (ctx: Context, self: Value, propertyName: string) => boolean;
-        delete?: (ctx: Context, self: Value, propertyName: string) => void;
-        defaultValue?: (ctx: Context, self: Value, hint: DefaultValueHint) => Generator<unknown, Value>;
+        get?: (ctx: Context, self: InterpreterObject, propertyName: string) => Generator<unknown, Value>;
+        put?: (
+            ctx: Context,
+            self: InterpreterObject,
+            propertyName: string,
+            value: Value
+        ) => Generator<unknown, unknown>;
+        canPut?: (ctx: Context, self: InterpreterObject, propertyName: string) => boolean;
+        hasProperty?: (ctx: Context, self: InterpreterObject, propertyName: string) => boolean;
+        delete?: (ctx: Context, self: InterpreterObject, propertyName: string) => void;
+        defaultValue?: (ctx: Context, self: InterpreterObject, hint: DefaultValueHint) => Generator<unknown, Value>;
         construct?: (ctx: Context, args: Value[]) => Generator<unknown, Value>;
         call?: NativeFunction;
     };
     properties: Map<string, Property>;
 };
+
+function canPutProperty(ctx: Context, self: InterpreterObject, propertyName: string): boolean {
+    if (self.internalProperties.canPut) {
+        return self.internalProperties.canPut(ctx, self, propertyName);
+    }
+    const prop = self.properties.get(propertyName);
+    if (prop != null) {
+        return !prop.readOnly;
+    }
+    const prototype = self.internalProperties.prototype;
+    if (prototype == null) {
+        return true;
+    }
+    // FIXME host object
+    return canPutProperty(ctx, prototype, propertyName);
+}
+
+function* putProperty(
+    ctx: Context,
+    self: InterpreterObject,
+    propertyName: string,
+    value: Value
+): Generator<unknown, unknown> {
+    if (self.internalProperties.put) {
+        return yield* self.internalProperties.put(ctx, self, propertyName, value);
+    }
+    if (!canPutProperty(ctx, self, propertyName)) {
+        return;
+    }
+    const prop = self.properties.get(propertyName);
+    if (prop != null) {
+        prop.value = value;
+    } else {
+        self.properties.set(propertyName, {
+            readOnly: false,
+            dontEnum: false,
+            dontDelete: false,
+            internal: false,
+            value,
+        });
+    }
+    return;
+}
 
 function shallowCopyObject(obj: InterpreterObject): InterpreterObject {
     return {
@@ -2528,7 +2576,8 @@ type Scope = {
 type Context = {
     runtime: Interpreter;
     scope: Scope;
-    this: Value;
+    this: InterpreterObject;
+    global: InterpreterObject;
 };
 
 export class Interpreter {
@@ -2576,8 +2625,7 @@ export class Interpreter {
         }
     }
 
-    private *getProperty(value: Value, name: string): Generator<unknown, Value> {
-        if (isPrimitive(value)) throw new Error("NOTIMPL");
+    private *getProperty(value: InterpreterObject, name: string): Generator<unknown, Value> {
         let o: InterpreterObject | null = value;
         while (o != null) {
             if (o.properties.has(name)) {
@@ -2599,7 +2647,12 @@ export class Interpreter {
         return false;
     }
 
-    private *callObject(ctx: Context, obj: InterpreterObject, self: Value, args: Value[]): Generator<unknown, Value> {
+    private *callObject(
+        ctx: Context,
+        obj: InterpreterObject,
+        self: InterpreterObject,
+        args: Value[]
+    ): Generator<unknown, Value> {
         const call = obj.internalProperties.call;
         if (call == null) {
             throw new Error("call");
@@ -2607,7 +2660,7 @@ export class Interpreter {
         return yield* call(ctx, self, args);
     }
 
-    private *defaultValue(ctx: Context, value: Value, hint: DefaultValueHint): Generator<unknown, Value> {
+    private *defaultValue(ctx: Context, value: InterpreterObject, hint: DefaultValueHint): Generator<unknown, Value> {
         if (hint === "string") {
             const toString = yield* this.getProperty(value, "toString");
             if (isObject(toString)) {
@@ -3199,13 +3252,21 @@ export class Interpreter {
     }
 
     *referenceGetValue(reference: RefOrValue): Generator<unknown, Value> {
-        if (reference == null || typeof reference !== "object" || !("name" in reference)) {
+        if (!isReference(reference)) {
             return reference;
         }
         if (reference.baseObject == null) {
             throw new ReferenceError(`${reference.name}`);
         }
         return yield* this.getProperty(reference.baseObject, reference.name);
+    }
+
+    *referencePutValue(ctx: Context, reference: RefOrValue, value: Value): Generator<unknown, unknown> {
+        if (!isReference(reference)) {
+            throw new ReferenceError("not reference");
+        }
+        yield* putProperty(ctx, reference.baseObject ?? ctx.global, reference.name, value);
+        return;
     }
 
     *runEmptyStatement(_ctx: Context, _statement: EmptyStatement): Generator<unknown, Completion> {
@@ -3373,7 +3434,31 @@ export class Interpreter {
             case "logicalAndOperator":
             case "logicalOrOperator":
             case "conditionalOperator":
-            case "assignmentOperator":
+                break;
+            case "assignmentOperator": {
+                switch (expression.operator) {
+                    case "=": {
+                        const leftRef = yield* this.evaluateExpression(ctx, expression.left);
+                        const rightRef = yield* this.evaluateExpression(ctx, expression.right);
+                        const right = yield* this.referenceGetValue(rightRef);
+                        yield* this.referencePutValue(ctx, leftRef, right);
+                        return right;
+                    }
+                    case "*=":
+                    case "/=":
+                    case "%=":
+                    case "+=":
+                    case "-=":
+                    case "<<=":
+                    case ">>=":
+                    case ">>>=":
+                    case "&=":
+                    case "^=":
+                    case "|=":
+                        break;
+                }
+                break;
+            }
             case "commaOperator":
                 break;
         }
@@ -3439,6 +3524,7 @@ export class Interpreter {
             runtime: this,
             scope: this.globalScope,
             this: this.globalScope.object,
+            global: this.globalScope.object,
         };
         for (const element of program.sourceElements) {
             if (element.type === "functionDeclaration") {

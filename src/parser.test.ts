@@ -1328,4 +1328,71 @@ test("interpreter", async () => {
         value: "[object Object]",
     });
     await expect(new Interpreter().runAsync("null.toString()")).rejects.toThrow();
+    await expect(new Interpreter().runAsync("new 1")).rejects.toThrow();
+    await expect(new Interpreter().runAsync("new 'a'")).rejects.toThrow();
+    await expect(new Interpreter().runAsync("new new Object()")).rejects.toThrow();
+    expect(await new Interpreter().runAsync("a = 1")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await new Interpreter().runAsync("a = 1; a")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await new Interpreter().runAsync("Object = 1; Object")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await new Interpreter().runAsync("Object.length = 123; Object.length")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await new Interpreter().runAsync("Object.prototype.length = 123; Object.prototype.length")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 123,
+    });
+    expect(
+        await new Interpreter().runAsync(String.raw`
+Object.prototype.hoge = 1;
+o1 = new Object;
+o1.hoge = 123;
+o2 = new Object;
+o2.hoge = o2.hoge + 1;
+o2.hoge;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(
+        await new Interpreter().runAsync(String.raw`
+Object.prototype.hoge = 1;
+o1 = new Object;
+o1.hoge = 123;
+o2 = new Object;
+o2.hoge = o2.hoge + 1;
+o1.hoge;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 123,
+    });
+    expect(
+        await new Interpreter().runAsync(String.raw`
+Number.prototype.hoge = 1;
+1.0.hoge = 123;
+1.0.hoge = 1.0.hoge + 456;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 457,
+    });
 });
