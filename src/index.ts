@@ -3975,8 +3975,7 @@ function* runVariableDeclaration(ctx: Context, declaration: VariableDeclaration)
         return;
     }
     const left = resolveIdentifier(ctx.scope, declaration.name);
-    const rightRef =
-        declaration.initializer == null ? undefined : yield* evaluateExpression(ctx, declaration.initializer);
+    const rightRef = yield* evaluateExpression(ctx, declaration.initializer);
     const right = yield* referenceGetValue(rightRef);
     yield* referencePutValue(ctx, left, right);
 }

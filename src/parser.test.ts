@@ -395,6 +395,8 @@ b`)
     expect(error(() => parse(String.raw`abc var abc`))).toBeTruthy();
     expect(error(() => parse(String.raw`void a = 1`))).toBeTruthy();
     expect(error(() => parse(String.raw`typeof a = 1`))).toBeTruthy();
+    expect(astToString(parse(String.raw`a().hoge`))).toStrictEqual(["(expr (member-ident (call a) hoge))"]);
+    expect(astToString(parse(String.raw`a()[1]`))).toStrictEqual(["(expr (member-expr (call a) 1))"]);
     expect(
         omitPosition(
             parse(String.raw`
@@ -1117,6 +1119,16 @@ test("interpreter", async () => {
         hasValue: true,
         value: 1 * 2 + 3 * 4,
     });
+    expect(await runAsync("4/2;")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(await runAsync("5%6;")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 5,
+    });
     expect(await runAsync("1*(2+3)*4;")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
@@ -1791,6 +1803,26 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 1 >= 1,
     });
+    expect(await runAsync(String.raw`1<=2`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1 <= 2,
+    });
+    expect(await runAsync(String.raw`1<=1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1 <= 1,
+    });
+    expect(await runAsync(String.raw`2<=1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2 <= 1,
+    });
+    expect(await runAsync(String.raw`NaN<=1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
     expect(await runAsync(String.raw`Infinity>=-Infinity`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
@@ -2185,6 +2217,15 @@ Number.prototype.hoge = 1;
     });
     expect(
         await runAsync(String.raw`
+            o = new Object(); o.a = 1; for (var a in o) { break; }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1, // V8, JSCore: undefined, Spidermonkey: 1, ???
+    });
+    expect(
+        await runAsync(String.raw`
             Object.prototype.a = 2;
             o = new Object(); for (var a in o) { a }
         `)
@@ -2264,6 +2305,31 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 1,
     });
+    expect(await runAsync(String.raw`4^1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 5,
+    });
+    expect(await runAsync(String.raw`1^1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await runAsync(String.raw`1^true`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await runAsync(String.raw`true^true`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await runAsync(String.raw`true^false`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
     expect(await runAsync(String.raw`(0xffffffff + 1) | 0`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
@@ -2280,6 +2346,31 @@ Number.prototype.hoge = 1;
         value: -2147483648,
     });
     expect(await runAsync(String.raw`-1 & ~0x80000000`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0x7fffffff,
+    });
+    expect(await runAsync(String.raw`1<<4`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 16,
+    });
+    expect(await runAsync(String.raw`16>>4`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await runAsync(String.raw`-1>>1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: -1,
+    });
+    expect(await runAsync(String.raw`16>>>4`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await runAsync(String.raw`-1>>>1`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 0x7fffffff,
@@ -2408,6 +2499,11 @@ Number.prototype.hoge = 1;
         type: "normalCompletion",
         hasValue: true,
         value: 5,
+    });
+    expect(await runAsync(String.raw`a = 1|4|8; a ^= 4|16;`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 25,
     });
     expect(await runAsync(String.raw`a = 1, a += 1, a += 2;`)).toStrictEqual({
         type: "normalCompletion",
@@ -2760,5 +2856,54 @@ Number.prototype.hoge = 1;
         type: "normalCompletion",
         hasValue: true,
         value: "[object Function]",
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge() { while (hoge) return 1; }
+        hoge();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge() { for (;;) return 1; }
+        hoge();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge() { return; }
+        hoge();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge() { var o = new Object; o.a = 2; for (var a in o) return 1; }
+        hoge();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        Boolean(true)["a"]
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
     });
 });
