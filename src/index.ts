@@ -3901,8 +3901,10 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                     throw new Error("unreachable");
             }
         }
-        case "commaOperator":
-            break;
+        case "commaOperator": {
+            yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            return yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+        }
     }
     throw new Error();
 }

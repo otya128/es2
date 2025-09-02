@@ -2407,4 +2407,9 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 5,
     });
+    expect(await runAsync(String.raw`a = 1, a += 1, a += 2;`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 4,
+    });
 });
