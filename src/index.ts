@@ -2540,7 +2540,7 @@ type InterpreterObject = {
         ) => Generator<unknown, unknown>;
         canPut?: (ctx: Context, self: InterpreterObject, propertyName: string) => boolean;
         hasProperty?: (ctx: Context, self: InterpreterObject, propertyName: string) => boolean;
-        delete?: (ctx: Context, self: InterpreterObject, propertyName: string) => void;
+        delete?: (ctx: Context, self: InterpreterObject, propertyName: string) => Value;
         defaultValue?: (ctx: Context, self: InterpreterObject, hint: DefaultValueHint) => Generator<unknown, Value>;
         construct?: (ctx: Context, args: Value[]) => Generator<unknown, Value>;
         call?: NativeFunction;
@@ -2793,6 +2793,18 @@ function hasProperty(obj: InterpreterObject, name: string): boolean {
         o = o.internalProperties.prototype;
     }
     return false;
+}
+
+function deleteProperty(obj: InterpreterObject, name: string): boolean {
+    const prop = obj.properties.get(name);
+    if (prop == null) {
+        return true;
+    }
+    if (prop.dontDelete) {
+        return false;
+    }
+    obj.properties.delete(name);
+    return true;
 }
 
 function* callObject(
@@ -3682,7 +3694,18 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             yield* referencePutValue(ctx, ref, computed);
             return number;
         }
-        case "deleteOperator":
+        case "deleteOperator": {
+            const ref = yield* evaluateExpression(ctx, expression.expression);
+            if (!isReference(ref)) {
+                // newer ES returns true
+                throw new ReferenceError("value can not be deleted");
+            }
+            if (!isObject(ref.baseObject)) {
+                return true;
+            }
+            return deleteProperty(ref.baseObject, ref.name);
+            // If Result(2) does not implement the internal [[Delete]] method, go to step 8 <= ?
+        }
         case "voidOperator":
         case "typeofOperator":
             break;
