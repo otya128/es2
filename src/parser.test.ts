@@ -2045,4 +2045,119 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 10,
     });
+    expect(
+        await runAsync(String.raw`
+            for (var i = 0; i < 10; i = i + 1) {}
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: false,
+    });
+    expect(
+        await runAsync(String.raw`
+            for (var i = 0; i < 10; i = i + 1) i;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 9,
+    });
+    expect(
+        await runAsync(String.raw`
+            for (var i = 0; i < 10; i = i + 1) i = i + 2;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 11,
+    });
+    expect(
+        await runAsync(String.raw`
+            for (var i = 0; i < 10; i = i + 1) {
+                i;
+                break;
+            }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(
+        await runAsync(String.raw`
+            for (var i = 0; i < 10; i = i + 1) {
+                i;
+                continue;
+            }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 9,
+    });
+    expect(
+        await runAsync(String.raw`
+            for (;;) {
+                1;
+                break;
+            }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+            i = 0;
+            for (;i = i + 1;) {
+                if (i == 10) {
+                    "ok";
+                    break;
+                }
+            }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "ok",
+    });
+    expect(
+        await runAsync(String.raw`
+            i = 0;
+            for (;;i = i + 1) {
+                if (i == 10) {
+                    break;
+                }
+            }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await runAsync(String.raw`0;while(0);`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await runAsync(String.raw`0;for(1;0;1);`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(
+        await runAsync(String.raw`
+            for (i = 0;;) {
+                i = i + 1;
+                if (i == 10) {
+                    break;
+                }
+            }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 10,
+    });
 });

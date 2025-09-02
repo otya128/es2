@@ -3839,6 +3839,45 @@ function* runWhileStatement(ctx: Context, statement: WhileStatement): Generator<
     return completion;
 }
 
+function* runForStatement(ctx: Context, statement: ForStatement): Generator<unknown, Completion> {
+    let completion: Completion = {
+        type: "normalCompletion",
+        hasValue: false,
+    };
+    if (statement.initialization != null) {
+        if (statement.initialization.type !== "variableStatement") {
+            yield* referenceGetValue(yield* evaluateExpression(ctx, statement.initialization));
+        } else {
+            yield* runVariableStatement(ctx, statement.initialization);
+        }
+    }
+    while (true) {
+        if (statement.condition != null) {
+            if (!toBoolean(yield* referenceGetValue(yield* evaluateExpression(ctx, statement.condition)))) {
+                break;
+            }
+        }
+        const result = yield* runStatement(ctx, statement.statement);
+        if (result.hasValue) {
+            completion = {
+                type: "normalCompletion",
+                hasValue: true,
+                value: result.value,
+            };
+        }
+        if (result.type === "abruptCompletion" && result.cause === "break") {
+            break;
+        }
+        if (result.type === "returnCompletion") {
+            return result;
+        }
+        if (statement.afterthought != null) {
+            yield* referenceGetValue(yield* evaluateExpression(ctx, statement.afterthought));
+        }
+    }
+    return completion;
+}
+
 function* runWithStatement(ctx: Context, statement: WithStatement): Generator<unknown, Completion> {
     const ref = yield* evaluateExpression(ctx, statement.expression);
     const value = yield* referenceGetValue(ref);
@@ -3870,6 +3909,7 @@ function* runStatement(ctx: Context, statement: Statement): Generator<unknown, C
         case "whileStatement":
             return yield* runWhileStatement(ctx, statement);
         case "forStatement":
+            return yield* runForStatement(ctx, statement);
         case "forInStatement":
             throw new Error();
         case "continueStatement":
