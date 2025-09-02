@@ -1712,4 +1712,39 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: "[object Global]", // ????
     });
+    expect(
+        await runAsync(String.raw`
+        if (1) 1; else 0;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        if (1) 1;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        if (0) 2; else 3;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 3,
+    });
+    expect(
+        await runAsync(String.raw`
+        if (0) 1;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: false,
+    });
 });

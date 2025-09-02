@@ -3610,6 +3610,20 @@ function* runExpressionStatement(ctx: Context, statement: ExpressionStatement): 
     };
 }
 
+function* runIfStatement(ctx: Context, statement: IfStatement): Generator<unknown, Completion> {
+    const ref = yield* evaluateExpression(ctx, statement.expression);
+    const value = yield* referenceGetValue(ref);
+    if (toBoolean(value)) {
+        return yield* runStatement(ctx, statement.thenStatement);
+    } else if (statement.elseStatement != null) {
+        return yield* runStatement(ctx, statement.elseStatement);
+    }
+    return {
+        type: "normalCompletion",
+        hasValue: false,
+    };
+}
+
 function* runWithStatement(ctx: Context, statement: WithStatement): Generator<unknown, Completion> {
     const ref = yield* evaluateExpression(ctx, statement.expression);
     const value = yield* referenceGetValue(ref);
@@ -3637,6 +3651,7 @@ function* runStatement(ctx: Context, statement: Statement): Generator<unknown, C
         case "expressionStatement":
             return yield* runExpressionStatement(ctx, statement);
         case "ifStatement":
+            return yield* runIfStatement(ctx, statement);
         case "whileStatement":
         case "forStatement":
         case "forInStatement":
