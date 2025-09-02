@@ -2451,17 +2451,21 @@ type AbruptCompletion =
           value: Value;
       };
 
-type Reference =
-    | null
-    | undefined
-    | number
-    | boolean
-    | string
-    | Value
-    | {
-          baseObject: Value;
-          name: string;
-      };
+type Reference = {
+    baseObject: Value;
+    name: string;
+};
+type RefOrValue = null | undefined | number | boolean | string | Value | Reference;
+
+function isReference(ref: RefOrValue): ref is Reference {
+    if (ref == null || typeof ref !== "object") {
+        return false;
+    }
+    if ("name" in ref) {
+        return true;
+    }
+    return false;
+}
 
 type Property = {
     readOnly: boolean;
@@ -2485,7 +2489,7 @@ type InterpreterObject = {
         hasProperty?: (ctx: Context, self: Value, propertyName: string) => boolean;
         delete?: (ctx: Context, self: Value, propertyName: string) => void;
         defaultValue?: (ctx: Context, self: Value, hint: DefaultValueHint) => Generator<unknown, Value>;
-        construct?: NativeFunction;
+        construct?: (ctx: Context, args: Value[]) => Generator<unknown, Value>;
         call?: NativeFunction;
     };
     properties: Map<string, Property>;
@@ -2512,6 +2516,10 @@ function isObject(value: Value): value is InterpreterObject {
     return !isPrimitive(value);
 }
 
+function isActivationObject(_: Value): boolean {
+    return false;
+}
+
 type Scope = {
     parent: Scope | undefined;
     object: InterpreterObject;
@@ -2524,7 +2532,7 @@ type Context = {
 };
 
 export class Interpreter {
-    private createFunction(func: NativeFunction): Value {
+    private createFunction(func: NativeFunction, length: number): InterpreterObject {
         return {
             internalProperties: {
                 prototype: this.functionPrototype,
@@ -2532,15 +2540,28 @@ export class Interpreter {
                 value: undefined,
                 call: func,
             },
-            properties: new Map(),
+            properties: new Map([
+                [
+                    "length",
+                    {
+                        readOnly: true,
+                        dontEnum: true,
+                        dontDelete: true,
+                        internal: false,
+                        value: length,
+                    },
+                ],
+            ]),
         };
     }
     private toObject(value: Value) {
         switch (typeof value) {
             case "string":
+                return this.newStringObject(value);
             case "number":
+                return this.newNumberObject(value);
             case "boolean":
-                throw new TypeError("FIXME");
+                return this.newBooleanObject(value);
             case "undefined":
                 throw new TypeError();
             case "object":
@@ -2666,7 +2687,7 @@ export class Interpreter {
         return yield* this.toNumber(ctx, yield* this.toPrimitive(ctx, value, "number"));
     }
 
-    private newObject(): Value {
+    private newObject(): InterpreterObject {
         return {
             internalProperties: {
                 prototype: shallowCopyObject(this.objectPrototype),
@@ -2674,6 +2695,50 @@ export class Interpreter {
                 value: undefined,
             },
             properties: new Map(),
+        };
+    }
+
+    private newStringObject(value: string): InterpreterObject {
+        return {
+            internalProperties: {
+                prototype: this.stringPrototype ?? this.objectPrototype,
+                class: "String",
+                value,
+            },
+            properties: new Map([
+                [
+                    "length",
+                    {
+                        readOnly: true,
+                        dontEnum: true,
+                        dontDelete: true,
+                        internal: false,
+                        value: value.length,
+                    },
+                ],
+            ]),
+        };
+    }
+
+    private newNumberObject(value: number): InterpreterObject {
+        return {
+            internalProperties: {
+                prototype: this.numberPrototype ?? this.objectPrototype,
+                class: "Number",
+                value,
+            },
+            properties: new Map([]),
+        };
+    }
+
+    private newBooleanObject(value: boolean): InterpreterObject {
+        return {
+            internalProperties: {
+                prototype: this.booleanPrototype ?? this.objectPrototype,
+                class: "Boolean",
+                value,
+            },
+            properties: new Map([]),
         };
     }
 
@@ -2698,6 +2763,21 @@ export class Interpreter {
                     dontDelete: false,
                     internal: false,
                     value: null,
+                },
+            ],
+            [
+                "toString",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: this.createFunction(function* objectToString(_ctx, self, _args) {
+                        if (!isObject(self)) {
+                            throw new Error("FIXME");
+                        }
+                        return `[object ${self.internalProperties.class}]`;
+                    }, 1),
                 },
             ],
         ]),
@@ -2746,7 +2826,7 @@ export class Interpreter {
     };
     private object: InterpreterObject = {
         internalProperties: {
-            class: "Object",
+            class: "Function",
             value: undefined,
             prototype: this.functionPrototype,
             *call(ctx, _self, args) {
@@ -2755,8 +2835,17 @@ export class Interpreter {
                 }
                 return ctx.runtime.toObject(args[0]);
             },
-            *construct(ctx, _self, _args) {
-                return ctx.runtime.newObject();
+            *construct(ctx, args) {
+                const o = args[0];
+                if (o == null) {
+                    return ctx.runtime.newObject();
+                }
+                if (isObject(o)) {
+                    return o;
+                }
+                if (isPrimitive(o)) {
+                    return ctx.runtime.toObject(o);
+                }
             },
         },
         properties: new Map([
@@ -2871,15 +2960,182 @@ export class Interpreter {
                         return yield new Promise((resolve) => {
                             setTimeout(() => resolve("hello"), 1000);
                         });
-                    }),
+                    }, 0),
                 },
             ],
         ]),
     };
+    private stringObject: InterpreterObject;
+    private stringPrototype: InterpreterObject;
+    private numberObject: InterpreterObject;
+    private numberPrototype: InterpreterObject;
+    private booleanObject: InterpreterObject;
+    private booleanPrototype: InterpreterObject;
     private globalScope: Scope = {
         parent: undefined,
         object: this.global,
     };
+    constructor() {
+        this.objectPrototype.properties.set("constructor", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.object,
+        });
+        this.stringObject = this.createFunction(function* string(ctx, _, args) {
+            if (args.length === 0) {
+                return "";
+            }
+            return yield* ctx.runtime.toString(ctx, args[0]);
+        }, 1);
+        this.stringObject.internalProperties.construct = function* stringConstructor(ctx, args) {
+            const value = args.length === 0 ? "" : yield* ctx.runtime.toString(ctx, args[0]);
+            return ctx.runtime.newStringObject(value);
+        };
+        this.stringPrototype = this.newStringObject("");
+        this.stringPrototype.properties.set("toString", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.createFunction(function* stringToString(_ctx, self, _args) {
+                if (!isObject(self) || typeof self.internalProperties.value !== "string") {
+                    throw new TypeError("String.prototype.toString: this must be String object");
+                }
+                return self.internalProperties.value;
+            }, 1),
+        });
+        this.stringPrototype.properties.set("valueOf", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.createFunction(function* stringValueOf(_ctx, self, _args) {
+                if (!isObject(self) || typeof self.internalProperties.value !== "string") {
+                    throw new TypeError("String.prototype.valueOf: this must be String object");
+                }
+                return self.internalProperties.value;
+            }, 1),
+        });
+        this.stringObject.properties.set("prototype", {
+            readOnly: true,
+            dontEnum: true,
+            dontDelete: true,
+            internal: false,
+            value: this.stringPrototype,
+        });
+        this.global.properties.set("String", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.stringObject,
+        });
+        this.numberObject = this.createFunction(function* Number(ctx, _, args) {
+            if (args.length === 0) {
+                return 0;
+            }
+            return yield* ctx.runtime.toNumber(ctx, args[0]);
+        }, 1);
+        this.numberObject.internalProperties.construct = function* numberConstructor(ctx, args) {
+            const value = args.length === 0 ? 0 : yield* ctx.runtime.toNumber(ctx, args[0]);
+            return ctx.runtime.newNumberObject(value);
+        };
+        this.numberPrototype = this.newNumberObject(0);
+        this.numberPrototype.properties.set("toString", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.createFunction(function* numberToString(ctx, self, args) {
+                if (!isObject(self) || typeof self.internalProperties.value !== "number") {
+                    throw new TypeError("Number.prototype.toString: this must be Number object");
+                }
+                const value = self.internalProperties.value;
+                const radix = args[0] === undefined ? 10 : yield* ctx.runtime.toNumber(ctx, args[0]);
+                // throws RnageError
+                return value.toString(radix); // l
+            }, 1),
+        });
+        this.numberPrototype.properties.set("valueOf", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.createFunction(function* numberValueOf(_ctx, self, _args) {
+                if (!isObject(self) || typeof self.internalProperties.value !== "number") {
+                    throw new TypeError("Number.prototype.valueOf: this must be Number object");
+                }
+                return self.internalProperties.value;
+            }, 1),
+        });
+        this.numberObject.properties.set("prototype", {
+            readOnly: true,
+            dontEnum: true,
+            dontDelete: true,
+            internal: false,
+            value: this.numberPrototype,
+        });
+        this.global.properties.set("Number", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.numberObject,
+        });
+
+        this.booleanObject = this.createFunction(function* Boolean(ctx, _, args) {
+            if (args.length === 0) {
+                return false;
+            }
+            return ctx.runtime.toBoolean(args[0]);
+        }, 1);
+        this.booleanObject.internalProperties.construct = function* booleanConstructor(ctx, args) {
+            const value = args.length === 0 ? false : ctx.runtime.toBoolean(args[0]);
+            return ctx.runtime.newBooleanObject(value);
+        };
+        this.booleanPrototype = this.newBooleanObject(false);
+        this.booleanPrototype.properties.set("toString", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.createFunction(function* booleanToString(_ctx, self, _args) {
+                if (!isObject(self) || typeof self.internalProperties.value !== "boolean") {
+                    throw new TypeError("Boolean.prototype.toString: this must be Boolean object");
+                }
+                const value = self.internalProperties.value;
+                return value ? "true" : "false";
+            }, 1),
+        });
+        this.booleanPrototype.properties.set("valueOf", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.createFunction(function* booleanValueOf(_ctx, self, _args) {
+                if (!isObject(self) || typeof self.internalProperties.value !== "boolean") {
+                    throw new TypeError("Boolean.prototype.valueOf: this must be Boolean object");
+                }
+                return self.internalProperties.value;
+            }, 1),
+        });
+        this.booleanObject.properties.set("prototype", {
+            readOnly: true,
+            dontEnum: true,
+            dontDelete: true,
+            internal: false,
+            value: this.booleanPrototype,
+        });
+        this.global.properties.set("Boolean", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: this.booleanObject,
+        });
+    }
     private defineFunction(functionDeclaration: FunctionDeclaration) {}
 
     private toBoolean(value: Value): boolean {
@@ -2942,7 +3198,7 @@ export class Interpreter {
         return completion1;
     }
 
-    *referenceGetValue(reference: Reference): Generator<unknown, Value> {
+    *referenceGetValue(reference: RefOrValue): Generator<unknown, Value> {
         if (reference == null || typeof reference !== "object" || !("name" in reference)) {
             return reference;
         }
@@ -2959,7 +3215,7 @@ export class Interpreter {
         };
     }
 
-    resolveIdentifier(scope: Scope, name: string): Reference {
+    resolveIdentifier(scope: Scope, name: string): RefOrValue {
         let s: Scope | undefined = scope;
         while (s != null) {
             if (this.hasProperty(s.object, name)) {
@@ -2976,7 +3232,15 @@ export class Interpreter {
         };
     }
 
-    *evaluateExpression(ctx: Context, expression: Expression): Generator<unknown, Reference> {
+    *evaluateList(ctx: Context, list: Expression[]): Generator<unknown, Value[]> {
+        const result: Value[] = [];
+        for (const e of list) {
+            result.push(yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, e)));
+        }
+        return result;
+    }
+
+    *evaluateExpression(ctx: Context, expression: Expression): Generator<unknown, RefOrValue> {
         switch (expression.type) {
             case "literalExpression":
                 return expression.value;
@@ -3003,8 +3267,42 @@ export class Interpreter {
                     };
                 }
             }
-            case "newOperator":
-            case "callOperator":
+            case "newOperator": {
+                const value = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.expression));
+                let args: Value[] = [];
+                if (expression.argumentList != null) {
+                    args = yield* this.evaluateList(ctx, expression.argumentList);
+                }
+                if (!isObject(value)) {
+                    throw new TypeError("!isObject");
+                }
+                const construct = value.internalProperties.construct;
+                if (!construct) {
+                    throw new TypeError("not constructable");
+                }
+                const obj = yield* construct(ctx, args);
+                if (!isObject(obj)) {
+                    throw new TypeError("[[Construct]] result is not a object");
+                }
+                return obj;
+            }
+            case "callOperator": {
+                const valueRef = yield* this.evaluateExpression(ctx, expression.expression);
+                const args = yield* this.evaluateList(ctx, expression.argumentList);
+                const value = yield* this.referenceGetValue(valueRef);
+                if (!isObject(value)) {
+                    throw new TypeError("not Object");
+                }
+                const call = value.internalProperties.call;
+                if (call == null) {
+                    throw new TypeError("not callable");
+                }
+                let self = isReference(valueRef) ? valueRef.baseObject : null;
+                if (isActivationObject(self)) {
+                    self = null;
+                }
+                return yield* call(ctx, self, args);
+            }
             case "postfixIncrementOperator":
             case "postfixDecrementOperator":
             case "deleteOperator":

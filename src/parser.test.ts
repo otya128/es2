@@ -1075,12 +1075,12 @@ test("interpreter", async () => {
     expect(await new Interpreter().runAsync("1*2+3*4;")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
-        value: 1*2+3*4,
+        value: 1 * 2 + 3 * 4,
     });
     expect(await new Interpreter().runAsync("1*(2+3)*4;")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
-        value: 1*(2+3)*4,
+        value: 1 * (2 + 3) * 4,
     });
     expect(await new Interpreter().runAsync("1+'2';")).toStrictEqual({
         type: "normalCompletion",
@@ -1127,4 +1127,205 @@ test("interpreter", async () => {
         hasValue: true,
         value: 1,
     });
+    expect(await new Interpreter().runAsync("(new Object).constructor.length")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await new Interpreter().runAsync("new Object().constructor.length")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await new Interpreter().runAsync("String(11)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "11",
+    });
+    expect(await new Interpreter().runAsync("Number(11)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 11,
+    });
+    expect(await new Interpreter().runAsync("String.prototype + '1'")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(await new Interpreter().runAsync("String.prototype.length")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await new Interpreter().runAsync("String.prototype + 1")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(await new Interpreter().runAsync("'1' + String.prototype")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(await new Interpreter().runAsync("1 + String.prototype")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(await new Interpreter().runAsync("String.prototype.valueOf()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "",
+    });
+    expect(await new Interpreter().runAsync("String.prototype.toString()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "",
+    });
+    expect(await new Interpreter().runAsync("new String('1')+1")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "11",
+    });
+    expect(await new Interpreter().runAsync("new Number(1).valueOf()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await new Interpreter().runAsync("new Number(16).toString()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "16",
+    });
+    expect(await new Interpreter().runAsync("new Number(16).toString(16)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "10",
+    });
+    expect(await new Interpreter().runAsync("new Number(16).toString(Number.undef)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "16",
+    });
+    expect(await new Interpreter().runAsync("new Number(16).toString(2)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "10000",
+    });
+    expect(await new Interpreter().runAsync("new Number(16).toString(36)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "g",
+    });
+    await expect(new Interpreter().runAsync("Number(1)Number(2)")).rejects.toThrow();
+    await expect(new Interpreter().runAsync("new Number(16).toString(null)")).rejects.toThrow();
+    await expect(new Interpreter().runAsync("new Number(16).toString(1)")).rejects.toThrow();
+    await expect(new Interpreter().runAsync("new Number(16).toString(37)")).rejects.toThrow();
+    expect(await new Interpreter().runAsync("Number.prototype.valueOf()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await new Interpreter().runAsync("'1'.toString()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(await new Interpreter().runAsync("(1).toString()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    await expect(new Interpreter().runAsync("1.toString()")).rejects.toThrow();
+    expect(await new Interpreter().runAsync("1.0.toString()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(await new Interpreter().runAsync("1e0.toString()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(await new Interpreter().runAsync("true.toString()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "true",
+    });
+    expect(await new Interpreter().runAsync("false.toString()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "false",
+    });
+    expect(await new Interpreter().runAsync("Boolean(true).toString()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "true",
+    });
+    expect(await new Interpreter().runAsync("Boolean(new Object())")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await new Interpreter().runAsync("Boolean.prototype.valueOf()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(await new Interpreter().runAsync("new Object('1').valueOf()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(await new Interpreter().runAsync("new Object('12345').length")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 5,
+    });
+    expect(await new Interpreter().runAsync("new Object('1').toString()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(await new Interpreter().runAsync("new Object('1') + '2'")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "12",
+    });
+    expect(await new Interpreter().runAsync("new Object('1').valueOf()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(await new Interpreter().runAsync("new Object(1).valueOf()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await new Interpreter().runAsync("new Object(true).valueOf()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await new Interpreter().runAsync("new Object(new Object(true)).valueOf()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await new Interpreter().runAsync("null")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: null,
+    });
+    expect(await new Interpreter().runAsync("Object.hoge")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
+    });
+    expect(await new Interpreter().runAsync("Object.prototype.toString()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "[object Object]",
+    });
+    await expect(new Interpreter().runAsync("null.toString()")).rejects.toThrow();
 });
