@@ -2464,16 +2464,11 @@ type NormalCompletion =
           value: Value;
       };
 
-type ReturnCompletion =
-    | {
-          type: "returnCompletion";
-          hasValue: false;
-      }
-    | {
-          type: "returnCompletion";
-          hasValue: true;
-          value: Value;
-      };
+type ReturnCompletion = {
+    type: "returnCompletion";
+    hasValue: true;
+    value: Value;
+};
 
 type AbruptCompletion =
     | {
@@ -2638,7 +2633,7 @@ type Scope = {
 
 type Context = {
     scope: Scope;
-    this: InterpreterObject;
+    this: InterpreterObject | null;
     realm: Realm;
 };
 
@@ -2750,10 +2745,10 @@ function newBooleanObject(prototype: InterpreterObject, value: boolean): Interpr
     };
 }
 
-function createFunction(functionObject: InterpreterObject, func: NativeFunction, length: number): InterpreterObject {
+function createFunction(prototype: InterpreterObject, func: NativeFunction, length: number): InterpreterObject {
     return {
         internalProperties: {
-            prototype: functionObject.internalProperties.prototype,
+            prototype,
             class: "Function",
             value: undefined,
             call: func,
@@ -3070,7 +3065,7 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         internal: false,
         value: createFunction(
-            functionObject,
+            functionPrototype,
             function* objectToString(_ctx, self, _args) {
                 // newer ES:
                 // undefined => [object Undefined]
@@ -3084,7 +3079,7 @@ function createIntrinsics(): Intrinsics {
         ),
     });
     const string = createFunction(
-        functionObject,
+        functionPrototype,
         function* string(ctx, _, args) {
             if (args.length === 0) {
                 return "";
@@ -3111,7 +3106,7 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         internal: false,
         value: createFunction(
-            functionObject,
+            functionPrototype,
             function* stringToString(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "string") {
                     throw new TypeError("String.prototype.toString: this must be String object");
@@ -3127,7 +3122,7 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         internal: false,
         value: createFunction(
-            functionObject,
+            functionPrototype,
             function* stringValueOf(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "string") {
                     throw new TypeError("String.prototype.valueOf: this must be String object");
@@ -3145,7 +3140,7 @@ function createIntrinsics(): Intrinsics {
         value: stringPrototype,
     });
     const number = createFunction(
-        functionObject,
+        functionPrototype,
         function* Number(ctx, _, args) {
             if (args.length === 0) {
                 return 0;
@@ -3172,7 +3167,7 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         internal: false,
         value: createFunction(
-            functionObject,
+            functionPrototype,
             function* numberToString(ctx, self, args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "number") {
                     throw new TypeError("Number.prototype.toString: this must be Number object");
@@ -3191,7 +3186,7 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         internal: false,
         value: createFunction(
-            functionObject,
+            functionPrototype,
             function* numberValueOf(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "number") {
                     throw new TypeError("Number.prototype.valueOf: this must be Number object");
@@ -3209,7 +3204,7 @@ function createIntrinsics(): Intrinsics {
         value: numberPrototype,
     });
     const boolean = createFunction(
-        functionObject,
+        functionPrototype,
         function* Boolean(ctx, _, args) {
             if (args.length === 0) {
                 return false;
@@ -3236,7 +3231,7 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         internal: false,
         value: createFunction(
-            functionObject,
+            functionPrototype,
             function* booleanToString(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "boolean") {
                     throw new TypeError("Boolean.prototype.toString: this must be Boolean object");
@@ -3253,7 +3248,7 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         internal: false,
         value: createFunction(
-            functionObject,
+            functionPrototype,
             function* booleanValueOf(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "boolean") {
                     throw new TypeError("Boolean.prototype.valueOf: this must be Boolean object");
@@ -4142,6 +4137,22 @@ function* runForInStatement(ctx: Context, statement: ForInStatement): Generator<
     return completion;
 }
 
+function* runReturnStatement(ctx: Context, statement: ReturnStatement): Generator<unknown, Completion> {
+    if (statement.expression == null) {
+        return {
+            type: "returnCompletion",
+            hasValue: true,
+            value: undefined,
+        };
+    }
+    const value = yield* referenceGetValue(yield* evaluateExpression(ctx, statement.expression));
+    return {
+        type: "returnCompletion",
+        hasValue: true,
+        value,
+    };
+}
+
 function* runWithStatement(ctx: Context, statement: WithStatement): Generator<unknown, Completion> {
     const ref = yield* evaluateExpression(ctx, statement.expression);
     const value = yield* referenceGetValue(ref);
@@ -4189,11 +4200,12 @@ function* runStatement(ctx: Context, statement: Statement): Generator<unknown, C
                 hasValue: false,
             };
         case "returnStatement":
-            throw new Error();
+            return yield* runReturnStatement(ctx, statement);
         case "withStatement":
             return yield* runWithStatement(ctx, statement);
         default:
-            throw new Error();
+            const _: never = statement;
+            throw new Error("unreachable " + statement);
     }
 }
 
@@ -4211,13 +4223,66 @@ function defineVariable(ctx: Context, list: VariableDeclaration[]) {
     }
 }
 
+function* defineFunction(ctx: Context, decl: FunctionDeclaration): Generator<unknown, void> {
+    function* call(ctx: Context, self: InterpreterObject | null, args: Value[]): Generator<unknown, Value> {
+        const scope = {
+            parent: ctx.scope,
+            object: newObject(ctx.realm.intrinsics.ObjectPrototype),
+        };
+        const context: Context = {
+            scope,
+            this: self,
+            realm: ctx.realm,
+        };
+        for (let i = 0; i < decl.parameters.length; i++) {
+            yield* putProperty(context, scope.object, decl.parameters[i]!, args[i]);
+        }
+        visitStatement(decl.block, (statement) => {
+            if (statement.type === "variableStatement") {
+                defineVariable(context, statement.variableDeclarationList);
+            }
+            if (statement.type === "forInStatement") {
+                if (statement.initialization?.type === "variableDeclaration") {
+                    defineVariable(context, [statement.initialization]);
+                }
+            }
+        });
+        const completion = yield* runBlock(context, decl.block);
+        if (completion.type === "returnCompletion") {
+            return completion.value;
+        }
+        return undefined;
+    }
+    const func = createFunction(ctx.realm.intrinsics.FunctionPrototype, call, decl.parameters.length);
+    const prototype = newObject(ctx.realm.intrinsics.ObjectPrototype);
+    func.properties.set("prototype", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: prototype,
+    });
+    prototype.properties.set("constructor", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: func,
+    });
+    func.internalProperties.construct = function* construct(ctx, args) {
+        const prototype = yield* getProperty(func, "prototype");
+        if (!isObject(prototype)) {
+            throw new Error("FIXME");
+        }
+        const self = newObject(prototype);
+        yield* call(ctx, self, args);
+        return self;
+    };
+    yield* putProperty(ctx, ctx.realm.globalObject, decl.name, func);
+}
+
 function* run(source: string): Generator<unknown, Completion> {
     const program = parse(source);
-    for (const element of program.sourceElements) {
-        if (element.type !== "functionDeclaration") {
-            continue;
-        }
-    }
     let completion: Completion = {
         type: "normalCompletion",
         hasValue: false,
@@ -4236,6 +4301,12 @@ function* run(source: string): Generator<unknown, Completion> {
         this: globalScope.object,
         realm: realm,
     };
+    for (const element of program.sourceElements) {
+        if (element.type !== "functionDeclaration") {
+            continue;
+        }
+        yield* defineFunction(context, element);
+    }
     for (const element of program.sourceElements) {
         if (element.type === "functionDeclaration") {
             continue;

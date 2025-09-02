@@ -2571,4 +2571,194 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 1,
     });
+    expect(
+        await runAsync(String.raw`
+        function hoge(){}
+        hoge();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge(){return 1;}
+        hoge();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge(){return 1;}
+        function hoge(){return 2;}
+        hoge();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(
+        await runAsync(String.raw`
+        a = 2
+        function hoge(){var a = 1;}
+        hoge();
+        a
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge(a){return a}
+        hoge(1);
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge(a){return a}
+        hoge();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge(a,a){return a}
+        hoge(1);
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge(a,a){return a}
+        hoge(1, 2);
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge(a,a){return a}
+        hoge
+    `)
+    ).toMatchObject({
+        type: "normalCompletion",
+        hasValue: true,
+        value: {
+            internalProperties: {
+                class: "Function",
+            },
+        },
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge(a,a){return a}
+        hoge.length
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge(a,a){return hoge.length}
+        hoge()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(
+        await runAsync(String.raw`
+        function fib(n) {
+            if (n == 0) {
+                return 0;
+            } else if (n == 1) {
+                return 1;
+            } else {
+                return fib(n - 1) + fib(n - 2);
+            }
+        }
+        fib(10);
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 55,
+    });
+    expect(
+        await runAsync(String.raw`
+        function A() {
+            this.hoge = 1;
+        }
+        new A().hoge
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function A() {
+            this.hoge = 1;
+        }
+        function increment() {
+            this.hoge++;
+        }
+        function AToString() {
+            return "A: hoge=" + this.hoge;
+        }
+        A.prototype.increment = increment;
+        A.prototype.toString = AToString;
+        var a = new A();
+        a.increment();
+        a + ""
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "A: hoge=2",
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge() { return 1; }
+        hoge.prototype.constructor();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge() { return 1; }
+        hoge.tos = Object.prototype.toString;
+        hoge.tos()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "[object Function]",
+    });
 });
