@@ -908,7 +908,7 @@ export type UnaryExpression =
     | PrefixIncrementOperator
     | PrefixDecrementOperator
     | UnaryPlusOperator
-    | unaryMinusOperator
+    | UnaryMinusOperator
     | BitwiseNotOperator
     | LogicalNotOperator;
 
@@ -954,7 +954,7 @@ export type UnaryPlusOperator = {
     end: Position;
 };
 
-export type unaryMinusOperator = {
+export type UnaryMinusOperator = {
     type: "unaryMinusOperator";
     expression: UnaryExpression;
     start: Position;
@@ -2892,6 +2892,10 @@ function* toNumber(ctx: Context, value: Value): Generator<unknown, number> {
     return yield* toNumber(ctx, yield* toPrimitive(ctx, value, "number"));
 }
 
+function* toInt32(ctx: Context, value: Value): Generator<unknown, number> {
+    return (yield* toNumber(ctx, value)) | 0; // l
+}
+
 function toBoolean(value: Value): boolean {
     if (value === undefined || value === null) {
         return false;
@@ -3635,9 +3639,13 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             }
             return -number;
         }
-        case "bitwiseNotOperator":
+        case "bitwiseNotOperator": {
+            const value = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
+            const number = yield* toInt32(ctx, value);
+            return ~number; // l
+        }
         case "logicalNotOperator":
-            break;
+            return !toBoolean(yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression)));
         case "multiplyOperator": {
             const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
@@ -3734,11 +3742,35 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
             return !(yield* equalsValue(ctx, rightValue, leftValue));
         }
-        case "bitwiseAndOperator":
-        case "bitwiseXorOperator":
-        case "bitwiseOrOperator":
-        case "logicalAndOperator":
-        case "logicalOrOperator":
+        case "bitwiseAndOperator": {
+            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return (yield* toInt32(ctx, leftValue)) & (yield* toInt32(ctx, rightValue)); // l
+        }
+        case "bitwiseXorOperator": {
+            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return (yield* toInt32(ctx, leftValue)) ^ (yield* toInt32(ctx, rightValue)); // l
+        }
+        case "bitwiseOrOperator": {
+            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return (yield* toInt32(ctx, leftValue)) | (yield* toInt32(ctx, rightValue)); // l
+        }
+        case "logicalAndOperator": {
+            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            if (!toBoolean(leftValue)) {
+                return leftValue;
+            }
+            return yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+        }
+        case "logicalOrOperator": {
+            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            if (toBoolean(leftValue)) {
+                return leftValue;
+            }
+            return yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+        }
         case "conditionalOperator":
             break;
         case "assignmentOperator": {
