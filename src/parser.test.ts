@@ -1694,7 +1694,7 @@ Number.prototype.hoge = 1;
             },
         },
     });
-    /*expect(
+    expect(
         await new Interpreter().runAsync(String.raw`
         Function.prototype.hoge = 1
         new Object().toString.hoge
@@ -1703,5 +1703,15 @@ Number.prototype.hoge = 1;
         type: "normalCompletion",
         hasValue: true,
         value: 1,
-    });*/
+    });
+    expect(
+        await new Interpreter().runAsync(String.raw`
+        a = new Object().toString
+        a()
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "[object Global]", // ????
+    });
 });
