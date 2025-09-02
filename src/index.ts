@@ -908,7 +908,7 @@ export type UnaryExpression =
     | PrefixIncrementOperator
     | PrefixDecrementOperator
     | UnaryPlusOperator
-    | UnaryMiusOperator
+    | unaryMinusOperator
     | BitwiseNotOperator
     | LogicalNotOperator;
 
@@ -954,8 +954,8 @@ export type UnaryPlusOperator = {
     end: Position;
 };
 
-export type UnaryMiusOperator = {
-    type: "unaryMiusOperator";
+export type unaryMinusOperator = {
+    type: "unaryMinusOperator";
     expression: UnaryExpression;
     start: Position;
     end: Position;
@@ -2061,7 +2061,7 @@ function parseUnaryExpression(tokenizer: Tokenizer): UnaryExpression {
             case "-": {
                 tokenizer.next();
                 return {
-                    type: "unaryMiusOperator",
+                    type: "unaryMinusOperator",
                     expression: parseUnaryExpression(tokenizer),
                     start: begin.start,
                     end: tokenizer.prevPosition,
@@ -2445,6 +2445,7 @@ function parseExpression(tokenizer: Tokenizer): Expression {
 }
 
 type Value = null | undefined | number | string | boolean | InterpreterObject;
+type PrimitiveValue = undefined | null | boolean | number | string;
 
 type Completion = NormalCompletion | ReturnCompletion | AbruptCompletion;
 
@@ -2518,7 +2519,7 @@ type Property = {
     value: Value;
 };
 
-type DefaultValueHint = "string" | "number";
+type DefaultValueHint = "string" | "number" | "default";
 
 type NativeFunction = (ctx: Context, self: InterpreterObject | null, args: Value[]) => Generator<unknown, Value>;
 type InterpreterObject = {
@@ -2586,7 +2587,7 @@ function* putProperty(
     return;
 }
 
-function isPrimitive(value: Value): value is undefined | null | boolean | number | string {
+function isPrimitive(value: Value): value is PrimitiveValue {
     return (
         value === undefined ||
         value === null ||
@@ -2594,6 +2595,28 @@ function isPrimitive(value: Value): value is undefined | null | boolean | number
         typeof value === "number" ||
         typeof value === "string"
     );
+}
+
+function getType(value: Value): "undefined" | "null" | "boolean" | "number" | "string" | "object" | "function" {
+    if (value === null) {
+        return "null";
+    }
+    if (isObject(value)) {
+        if (value.internalProperties.call != null) {
+            return "function";
+        }
+        return "object";
+    }
+    const type = typeof value;
+    switch (type) {
+        case "string":
+        case "number":
+        case "boolean":
+        case "undefined":
+            return type;
+        default:
+            throw new Error("unreachable");
+    }
 }
 
 function isObject(value: Value): value is InterpreterObject {
@@ -2781,7 +2804,12 @@ function* callObject(
     return yield* call(ctx, self, args);
 }
 
-function* defaultValue(ctx: Context, value: InterpreterObject, hint: DefaultValueHint): Generator<unknown, Value> {
+function* defaultValue(
+    ctx: Context,
+    value: InterpreterObject,
+    hint: DefaultValueHint
+): Generator<unknown, PrimitiveValue> {
+    // FIXME: Date
     if (hint === "string") {
         const toString = yield* getProperty(value, "toString");
         if (isObject(toString)) {
@@ -2816,7 +2844,7 @@ function* defaultValue(ctx: Context, value: InterpreterObject, hint: DefaultValu
     throw new TypeError("ToPrimitive failed");
 }
 
-function* toPrimitive(ctx: Context, value: Value, preferredType: DefaultValueHint): Generator<unknown, Value> {
+function* toPrimitive(ctx: Context, value: Value, preferredType: DefaultValueHint): Generator<unknown, PrimitiveValue> {
     if (isPrimitive(value)) {
         return value;
     }
@@ -3358,7 +3386,7 @@ function* runBlock(ctx: Context, block: Block): Generator<unknown, Completion> {
         if (completion3.type === "abruptCompletion" && completion3.cause === "continue") {
             completion1 = {
                 type: "abruptCompletion",
-                cause: "break",
+                cause: "continue",
                 hasValue: true,
                 value: completion1.value,
             };
@@ -3421,6 +3449,102 @@ function* evaluateList(ctx: Context, list: Expression[]): Generator<unknown, Val
         result.push(yield* referenceGetValue(yield* evaluateExpression(ctx, e)));
     }
     return result;
+}
+
+function* compareValue(ctx: Context, leftValue: Value, rightValue: Value): Generator<unknown, boolean | undefined> {
+    const primitiveLeft = yield* toPrimitive(ctx, leftValue, "number");
+    const primitiveRight = yield* toPrimitive(ctx, rightValue, "number");
+    if (typeof primitiveLeft !== "string" || typeof primitiveRight !== "string") {
+        const numberLeft = yield* toNumber(ctx, primitiveLeft);
+        const numberRight = yield* toNumber(ctx, primitiveRight);
+        if (isNaN(numberLeft)) {
+            return undefined;
+        }
+        if (isNaN(numberRight)) {
+            return undefined;
+        }
+        if (numberLeft === numberRight) {
+            // l
+            return false;
+        }
+        if (numberLeft === Number.POSITIVE_INFINITY) {
+            return false;
+        }
+        if (numberRight === Number.POSITIVE_INFINITY) {
+            return true;
+        }
+        if (numberRight === Number.NEGATIVE_INFINITY) {
+            return false;
+        }
+        if (numberLeft === Number.NEGATIVE_INFINITY) {
+            return true;
+        }
+        return numberLeft < numberRight;
+    } else {
+        if (primitiveLeft.startsWith(primitiveRight)) {
+            return false;
+        }
+        if (primitiveRight.startsWith(primitiveLeft)) {
+            return true;
+        }
+        for (let k = 0; k < Math.min(primitiveLeft.length, primitiveRight.length); k++) {
+            const m = primitiveLeft.charCodeAt(k);
+            const n = primitiveRight.charCodeAt(k);
+            if (m === n) {
+                continue;
+            }
+            return m < n;
+        }
+        throw new Error("unreachable");
+    }
+}
+
+function* equalsValue(ctx: Context, x: Value, y: Value): Generator<unknown, boolean | undefined> {
+    if (typeof x === typeof y) {
+        if (typeof x === "undefined") {
+            return true;
+        }
+        if (x === null) {
+            return true;
+        }
+        if (typeof x === "number" && typeof y === "number") {
+            return x === y; // l
+        }
+        if (typeof x === "string" && typeof y === "string") {
+            return x === y;
+        }
+        if (typeof x === "boolean" && typeof y === "boolean") {
+            return x === y;
+        }
+        if (isObject(x) && isObject(y) && x === y) {
+            return true;
+        }
+    }
+    if (x === null && y === undefined) {
+        return true;
+    }
+    if (x === undefined && y === null) {
+        return true;
+    }
+    if (typeof x === "number" && typeof y === "string") {
+        return yield* equalsValue(ctx, x, yield* toNumber(ctx, y));
+    }
+    if (typeof x === "string" && typeof y === "number") {
+        return yield* equalsValue(ctx, yield* toNumber(ctx, x), y);
+    }
+    if (typeof x === "boolean") {
+        return yield* equalsValue(ctx, yield* toNumber(ctx, x), y);
+    }
+    if (typeof y === "boolean") {
+        return yield* equalsValue(ctx, x, yield* toNumber(ctx, y));
+    }
+    if ((typeof x === "string" || typeof x === "number") && isObject(y)) {
+        return yield* equalsValue(ctx, x, yield* toPrimitive(ctx, y, "default"));
+    }
+    if (isObject(x) && (typeof y === "string" || typeof y === "number")) {
+        return yield* equalsValue(ctx, yield* toPrimitive(ctx, x, "default"), y);
+    }
+    return false;
 }
 
 function* evaluateExpression(ctx: Context, expression: Expression): Generator<unknown, RefOrValue> {
@@ -3491,8 +3615,23 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
         case "typeofOperator":
         case "prefixIncrementOperator":
         case "prefixDecrementOperator":
-        case "unaryPlusOperator":
-        case "unaryMiusOperator":
+            break;
+        case "unaryPlusOperator": {
+            const value = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
+            const number = yield* toNumber(ctx, value);
+            if (isNaN(number)) {
+                return NaN;
+            }
+            return number;
+        }
+        case "unaryMinusOperator": {
+            const value = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
+            const number = yield* toNumber(ctx, value);
+            if (isNaN(number)) {
+                return NaN;
+            }
+            return -number;
+        }
         case "bitwiseNotOperator":
         case "logicalNotOperator":
             break;
@@ -3542,12 +3681,56 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
             return (yield* toNumber(ctx, left)) >>> (yield* toNumber(ctx, right)); // l
         }
-        case "lessThanOperator":
-        case "greaterThanOperator":
-        case "lessThanOrEqualOperator":
-        case "greaterThanOrEqualOperator":
-        case "equalsOperator":
-        case "doesNotEqualsOperator":
+        case "lessThanOperator": {
+            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const result = yield* compareValue(ctx, leftValue, rightValue);
+            if (result === undefined) {
+                return false;
+            } else {
+                return result;
+            }
+        }
+        case "greaterThanOperator": {
+            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const result = yield* compareValue(ctx, rightValue, leftValue);
+            if (result === undefined) {
+                return false;
+            } else {
+                return result;
+            }
+        }
+        case "lessThanOrEqualOperator": {
+            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const result = yield* compareValue(ctx, rightValue, leftValue);
+            if (result === undefined || result) {
+                return false;
+            } else {
+                return true;
+            }
+        }
+        case "greaterThanOrEqualOperator": {
+            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const result = yield* compareValue(ctx, leftValue, rightValue);
+            if (result === undefined || result) {
+                return false;
+            } else {
+                return true;
+            }
+        }
+        case "equalsOperator": {
+            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return yield* equalsValue(ctx, rightValue, leftValue);
+        }
+        case "doesNotEqualsOperator": {
+            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return !(yield* equalsValue(ctx, rightValue, leftValue));
+        }
         case "bitwiseAndOperator":
         case "bitwiseXorOperator":
         case "bitwiseOrOperator":
@@ -3624,6 +3807,38 @@ function* runIfStatement(ctx: Context, statement: IfStatement): Generator<unknow
     };
 }
 
+function* runWhileStatement(ctx: Context, statement: WhileStatement): Generator<unknown, Completion> {
+    let completion: Completion = {
+        type: "normalCompletion",
+        hasValue: false,
+    };
+    while (true) {
+        const ref = yield* evaluateExpression(ctx, statement.expression);
+        const value = yield* referenceGetValue(ref);
+        if (!toBoolean(value)) {
+            break;
+        }
+        const result = yield* runStatement(ctx, statement.statement);
+        if (result.hasValue) {
+            completion = {
+                type: "normalCompletion",
+                hasValue: true,
+                value: result.value,
+            };
+        }
+        if (result.type === "abruptCompletion" && result.cause === "break") {
+            break;
+        }
+        if (result.type === "abruptCompletion" && result.cause === "continue") {
+            continue;
+        }
+        if (result.type === "returnCompletion") {
+            return result;
+        }
+    }
+    return completion;
+}
+
 function* runWithStatement(ctx: Context, statement: WithStatement): Generator<unknown, Completion> {
     const ref = yield* evaluateExpression(ctx, statement.expression);
     const value = yield* referenceGetValue(ref);
@@ -3653,6 +3868,7 @@ function* runStatement(ctx: Context, statement: Statement): Generator<unknown, C
         case "ifStatement":
             return yield* runIfStatement(ctx, statement);
         case "whileStatement":
+            return yield* runWhileStatement(ctx, statement);
         case "forStatement":
         case "forInStatement":
             throw new Error();

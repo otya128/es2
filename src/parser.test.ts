@@ -209,7 +209,7 @@ function expressionToString(e: Expression): string {
             return `(pre-dec ${expressionToString(e.expression)})`;
         case "unaryPlusOperator":
             return `(+ ${expressionToString(e.expression)})`;
-        case "unaryMiusOperator":
+        case "unaryMinusOperator":
             return `(- ${expressionToString(e.expression)})`;
         case "bitwiseNotOperator":
             return `(~ ${expressionToString(e.expression)})`;
@@ -1746,5 +1746,303 @@ Number.prototype.hoge = 1;
     ).toStrictEqual({
         type: "normalCompletion",
         hasValue: false,
+    });
+    expect(await runAsync(String.raw`1<2`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1 < 2,
+    });
+    expect(await runAsync(String.raw`1<1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1 < 1,
+    });
+    expect(await runAsync(String.raw`NaN<NaN`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN < NaN,
+    });
+    expect(await runAsync(String.raw`1>2`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1 > 2,
+    });
+    expect(await runAsync(String.raw`1>1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1 > 1,
+    });
+    expect(await runAsync(String.raw`NaN>NaN`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1 > 1,
+    });
+    expect(await runAsync(String.raw`1>=2`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1 >= 2,
+    });
+    expect(await runAsync(String.raw`1>=1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1 >= 1,
+    });
+    expect(await runAsync(String.raw`Infinity>=-Infinity`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: Infinity >= -Infinity,
+    });
+    expect(await runAsync(String.raw`Infinity>=Infinity`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: Infinity >= Infinity,
+    });
+    expect(await runAsync(String.raw`Infinity>=0`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: Infinity >= 0,
+    });
+    expect(await runAsync(String.raw`0>=Infinity`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0 >= Infinity,
+    });
+    expect(await runAsync(String.raw`0>=-Infinity`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0 >= -Infinity,
+    });
+    expect(await runAsync(String.raw`-Infinity>=0`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: -Infinity >= 0,
+    });
+    expect(await runAsync(String.raw`'A'>='B'`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "A" >= "B",
+    });
+    expect(await runAsync(String.raw`'aA'>='aB'`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "aA" >= "aB",
+    });
+    expect(await runAsync(String.raw`'A'>='A'`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "A" >= "A",
+    });
+    expect(await runAsync(String.raw`'A'<'A'`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "A" < "A",
+    });
+    expect(await runAsync(String.raw`'AB'<'AB'`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "AB" < "AB",
+    });
+    expect(await runAsync(String.raw`'C'>'B'`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "C" > "B",
+    });
+    expect(await runAsync(String.raw`'B'>'C'`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "B" > "C",
+    });
+    expect(await runAsync(String.raw`'AB'>'AB'`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "AB" > "AB",
+    });
+    expect(await runAsync(String.raw`1==1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`1==2`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(await runAsync(String.raw`1!=1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(await runAsync(String.raw`1!=2`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`NaN == NaN`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(await runAsync(String.raw`NaN != NaN`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`true == 1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`true == 0`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(await runAsync(String.raw`true == 0`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(await runAsync(String.raw`Number.prototype == 0`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`String.prototype == ""`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`Boolean.prototype == false`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`Object() == Object()`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(await runAsync(String.raw`Object == Object`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Object;
+        var b = new Object;
+        a == b`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = Object();
+        var b = Object();
+        a == b`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Object;
+        var b = new Object(a);
+        a == b`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = Object();
+        var b = Object(a);
+        a == b`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`+1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await runAsync(String.raw`-1`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: -1,
+    });
+    expect(await runAsync(String.raw`+""`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await runAsync(String.raw`-""`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: -0,
+    });
+    expect(await runAsync(String.raw`+"1"`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await runAsync(String.raw`-"1"`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: -1,
+    });
+    expect(
+        await runAsync(String.raw`
+        while (false) {
+            Object.a();
+        }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: false,
+    });
+    expect(
+        await runAsync(String.raw`
+        a = 0
+        while (a < 10) {
+            a = a + 1
+        }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 10,
+    });
+    expect(
+        await runAsync(String.raw`
+        a = 0
+        while (a < 10) {
+            a = a + 1
+            break;
+        }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        a = 0
+        while (a < 10) {
+            a = a + 1
+            continue;
+        }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 10,
     });
 });
