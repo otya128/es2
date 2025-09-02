@@ -3771,8 +3771,14 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             }
             return yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
         }
-        case "conditionalOperator":
-            break;
+        case "conditionalOperator": {
+            const condition = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.conditionExpression));
+            if (toBoolean(condition)) {
+                return yield* referenceGetValue(yield* evaluateExpression(ctx, expression.thenExpression));
+            } else {
+                return yield* referenceGetValue(yield* evaluateExpression(ctx, expression.elseExpression));
+            }
+        }
         case "assignmentOperator": {
             switch (expression.operator) {
                 case "=": {

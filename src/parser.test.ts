@@ -2330,4 +2330,24 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 2,
     });
+    expect(await runAsync(String.raw`true ? 'T' : 'F'`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "T",
+    });
+    expect(await runAsync(String.raw`!true ? 'T' : 'F'`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "F",
+    });
+    expect(await runAsync(String.raw`var a = 1, b = 1; true ? a = 'T' : b = 'F'; a + b`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "T1",
+    });
+    expect(await runAsync(String.raw`var a = 1, b = 1; !true ? a = 'T' : b = 'F'; a + b`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1F",
+    });
 });
