@@ -2561,4 +2561,14 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: "function",
     });
+    expect(await runAsync(String.raw`(a) = 1; a`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await runAsync(String.raw`(Object.a) = 1; Object.a`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
 });
