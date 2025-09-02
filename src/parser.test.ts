@@ -41,13 +41,18 @@ test("tokenizer", () => {
     expect(filterByValue(tokenize("07"))).toStrictEqual([0o7]);
     expect(filterByValue(tokenize("0x123"))).toStrictEqual([0x123]);
     expect(filterByValue(tokenize("0Xf"))).toStrictEqual([0xf]);
+    expect(filterByValue(tokenize("0xF"))).toStrictEqual([0xf]);
     expect(filterByValue(tokenize("0X123"))).toStrictEqual([0x123]);
     expect(filterByValue(tokenize("123"))).toStrictEqual([123]);
     expect(filterByValue(tokenize("1"))).toStrictEqual([1]);
     expect(filterByValue(tokenize("123.1"))).toStrictEqual([123.1]);
     expect(filterByValue(tokenize("123.e1"))).toStrictEqual([123e1]);
     expect(filterByValue(tokenize(".123e1"))).toStrictEqual([0.123e1]);
+    expect(error(() => filterByValue(tokenize("0x")))).toBeTruthy();
     expect(error(() => filterByValue(tokenize("@")))).toBeTruthy();
+    expect(error(() => filterByValue(tokenize("1e")))).toBeTruthy();
+    expect(error(() => filterByValue(tokenize("1e+")))).toBeTruthy();
+    expect(filterByValue(tokenize(".e+1"))).toStrictEqual([".", "e", "+", 1]);
     expect(filterByValue(tokenize("."))).toStrictEqual(["."]);
     expect(filterByValue(tokenize("1e+2"))).toStrictEqual([1e2]);
     expect(filterByValue(tokenize("1e-2"))).toStrictEqual([1e-2]);
@@ -58,6 +63,7 @@ test("tokenizer", () => {
     expect(filterByValue(tokenize(".12"))).toStrictEqual([0.12]);
     expect(filterByValue(tokenize("1e2"))).toStrictEqual([1e2]);
     expect(filterByValue(tokenize("1e2 13"))).toStrictEqual([1e2, 13]);
+    expect(filterByValue(tokenize("0.e+2"))).toStrictEqual([0e2]);
     expect(filterByValue(tokenize("12e2"))).toStrictEqual([12e2]);
     expect(filterByValue(tokenize("1e23"))).toStrictEqual([1e23]);
     expect(filterByValue(tokenize("12e23"))).toStrictEqual([12e23]);

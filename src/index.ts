@@ -436,7 +436,9 @@ function parseDecimalLiteral(reader: Reader, start: Position): NumericLiteral {
     // current: DecimalDigit or .
     if (reader.current === ".") {
         reader.next();
-        parseDecimalDigits(reader);
+        if (isDecimalDigit(reader.current)) {
+            parseDecimalDigits(reader);
+        }
     } else if (isDecimalDigit(reader.current)) {
         parseDecimalDigits(reader);
         if (reader.current === ".") {
