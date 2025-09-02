@@ -393,6 +393,8 @@ b`)
         "(expr (= a (+ b (call (member-ident (call c (+ d e)) print)))))",
     ]);
     expect(error(() => parse(String.raw`abc var abc`))).toBeTruthy();
+    expect(error(() => parse(String.raw`void a = 1`))).toBeTruthy();
+    expect(error(() => parse(String.raw`typeof a = 1`))).toBeTruthy();
     expect(
         omitPosition(
             parse(String.raw`
@@ -2489,6 +2491,16 @@ Number.prototype.hoge = 1;
         value: false,
     });
     expect(await runAsync(String.raw`var a = 1; delete a; a`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(await runAsync(String.raw`void (a = 1)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
+    });
+    expect(await runAsync(String.raw`void (a = 1); a`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,

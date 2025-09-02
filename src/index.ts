@@ -3706,7 +3706,10 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             return deleteProperty(ref.baseObject, ref.name);
             // If Result(2) does not implement the internal [[Delete]] method, go to step 8 <= ?
         }
-        case "voidOperator":
+        case "voidOperator": {
+            yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
+            return undefined;
+        }
         case "typeofOperator":
             break;
         case "prefixIncrementOperator": {
