@@ -2413,6 +2413,7 @@ function parseAssignmentExpression(tokenizer: Tokenizer): AssignmentExpression {
                 case ">>>=":
                 case "&=":
                 case "^=":
+                case "|=":
                     tokenizer.next();
                     return {
                         type: "assignmentOperator",
@@ -3554,6 +3555,56 @@ function* equalsValue(ctx: Context, x: Value, y: Value): Generator<unknown, bool
     return false;
 }
 
+function* multiply(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
+    return (yield* toNumber(ctx, left)) * (yield* toNumber(ctx, right));
+}
+
+function* divide(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
+    return (yield* toNumber(ctx, left)) / (yield* toNumber(ctx, right));
+}
+
+function* modulo(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
+    return (yield* toNumber(ctx, left)) % (yield* toNumber(ctx, right));
+}
+
+function* add(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
+    // FIXME Date
+    const primitiveLeft = yield* toPrimitive(ctx, left, "number");
+    const primitiveRight = yield* toPrimitive(ctx, right, "number");
+    if (typeof primitiveLeft === "string" || typeof primitiveRight === "string") {
+        return (yield* toString(ctx, primitiveLeft)) + (yield* toString(ctx, primitiveRight));
+    }
+    return (yield* toNumber(ctx, primitiveLeft)) + (yield* toNumber(ctx, primitiveRight));
+}
+
+function* subtract(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
+    return (yield* toNumber(ctx, left)) - (yield* toNumber(ctx, right));
+}
+
+function* leftShift(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
+    return (yield* toNumber(ctx, left)) << (yield* toNumber(ctx, right));
+}
+
+function* signedRightShift(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
+    return (yield* toNumber(ctx, left)) >> (yield* toNumber(ctx, right));
+}
+
+function* unsignedRightShift(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
+    return (yield* toNumber(ctx, left)) >>> (yield* toNumber(ctx, right));
+}
+
+function* bitwiseAnd(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
+    return (yield* toNumber(ctx, left)) & (yield* toNumber(ctx, right));
+}
+
+function* bitwiseOr(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
+    return (yield* toNumber(ctx, left)) | (yield* toNumber(ctx, right));
+}
+
+function* bitwiseXor(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
+    return (yield* toNumber(ctx, left)) ^ (yield* toNumber(ctx, right));
+}
+
 function* evaluateExpression(ctx: Context, expression: Expression): Generator<unknown, RefOrValue> {
     switch (expression.type) {
         case "literalExpression":
@@ -3649,48 +3700,42 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
         case "multiplyOperator": {
             const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
-            return (yield* toNumber(ctx, left)) * (yield* toNumber(ctx, right));
+            return yield* multiply(ctx, left, right);
         }
         case "divideOperator": {
             const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
-            return (yield* toNumber(ctx, left)) / (yield* toNumber(ctx, right));
+            return yield* divide(ctx, left, right);
         }
         case "moduloOperator": {
             const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
-            return (yield* toNumber(ctx, left)) % (yield* toNumber(ctx, right));
+            return yield* modulo(ctx, left, right);
         }
         case "addOperator": {
             const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
-            // FIXME Date
-            const primitiveLeft = yield* toPrimitive(ctx, left, "number");
-            const primitiveRight = yield* toPrimitive(ctx, right, "number");
-            if (typeof primitiveLeft === "string" || typeof primitiveRight === "string") {
-                return (yield* toString(ctx, primitiveLeft)) + (yield* toString(ctx, primitiveRight));
-            }
-            return (yield* toNumber(ctx, primitiveLeft)) + (yield* toNumber(ctx, primitiveRight));
+            return yield* add(ctx, left, right);
         }
         case "subtractOperator": {
             const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
-            return (yield* toNumber(ctx, left)) - (yield* toNumber(ctx, right));
+            return yield* subtract(ctx, left, right);
         }
         case "leftShiftOperator": {
             const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
-            return (yield* toNumber(ctx, left)) << (yield* toNumber(ctx, right)); // l
+            return yield* leftShift(ctx, left, right);
         }
         case "signedRightShiftOperator": {
             const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
-            return (yield* toNumber(ctx, left)) >> (yield* toNumber(ctx, right)); // l
+            return yield* signedRightShift(ctx, left, right);
         }
         case "unsignedRightShiftOperator": {
             const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
-            return (yield* toNumber(ctx, left)) >>> (yield* toNumber(ctx, right)); // l
+            return yield* unsignedRightShift(ctx, left, right);
         }
         case "lessThanOperator": {
             const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
@@ -3745,17 +3790,17 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
         case "bitwiseAndOperator": {
             const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
-            return (yield* toInt32(ctx, leftValue)) & (yield* toInt32(ctx, rightValue)); // l
+            return yield* bitwiseAnd(ctx, rightValue, leftValue);
         }
         case "bitwiseXorOperator": {
             const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
-            return (yield* toInt32(ctx, leftValue)) ^ (yield* toInt32(ctx, rightValue)); // l
+            return yield* bitwiseXor(ctx, rightValue, leftValue);
         }
         case "bitwiseOrOperator": {
             const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
             const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
-            return (yield* toInt32(ctx, leftValue)) | (yield* toInt32(ctx, rightValue)); // l
+            return yield* bitwiseOr(ctx, rightValue, leftValue);
         }
         case "logicalAndOperator": {
             const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
@@ -3788,20 +3833,73 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                     yield* referencePutValue(ctx, leftRef, right);
                     return right;
                 }
-                case "*=":
-                case "/=":
-                case "%=":
-                case "+=":
-                case "-=":
-                case "<<=":
-                case ">>=":
-                case ">>>=":
-                case "&=":
-                case "^=":
-                case "|=":
+                default:
                     break;
             }
-            break;
+            const leftRef = yield* evaluateExpression(ctx, expression.left);
+            const left = yield* referenceGetValue(leftRef);
+            const rightRef = yield* evaluateExpression(ctx, expression.right);
+            const right = yield* referenceGetValue(rightRef);
+            switch (expression.operator) {
+                case "*=": {
+                    const result = yield* multiply(ctx, left, right);
+                    yield* referencePutValue(ctx, leftRef, result);
+                    return result;
+                }
+                case "/=": {
+                    const result = yield* divide(ctx, left, right);
+                    yield* referencePutValue(ctx, leftRef, result);
+                    return result;
+                }
+                case "%=": {
+                    const result = yield* modulo(ctx, left, right);
+                    yield* referencePutValue(ctx, leftRef, result);
+                    return result;
+                }
+                case "+=": {
+                    const result = yield* add(ctx, left, right);
+                    yield* referencePutValue(ctx, leftRef, result);
+                    return result;
+                }
+                case "-=": {
+                    const result = yield* subtract(ctx, left, right);
+                    yield* referencePutValue(ctx, leftRef, result);
+                    return result;
+                }
+                case "<<=": {
+                    const result = yield* leftShift(ctx, left, right);
+                    yield* referencePutValue(ctx, leftRef, result);
+                    return result;
+                }
+                case ">>=": {
+                    const result = yield* signedRightShift(ctx, left, right);
+                    yield* referencePutValue(ctx, leftRef, result);
+                    return result;
+                }
+                case ">>>=": {
+                    const result = yield* unsignedRightShift(ctx, left, right);
+                    yield* referencePutValue(ctx, leftRef, result);
+                    return result;
+                }
+                case "&=": {
+                    const result = yield* bitwiseAnd(ctx, left, right);
+                    yield* referencePutValue(ctx, leftRef, result);
+                    return result;
+                }
+                case "^=": {
+                    const result = yield* bitwiseXor(ctx, left, right);
+                    yield* referencePutValue(ctx, leftRef, result);
+                    return result;
+                }
+                case "|=": {
+                    const result = yield* bitwiseOr(ctx, left, right);
+                    yield* referencePutValue(ctx, leftRef, result);
+                    return result;
+                }
+                default:
+                    const _: never = expression.operator;
+                    throw new Error("unreachable");
+            }
         }
         case "commaOperator":
             break;
