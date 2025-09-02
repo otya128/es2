@@ -2610,7 +2610,6 @@ type Scope = {
 };
 
 type Context = {
-    runtime: Interpreter;
     scope: Scope;
     this: InterpreterObject;
     realm: Realm;
@@ -3333,421 +3332,409 @@ function createGlobal(intrinsics: Intrinsics): InterpreterObject {
     };
 }
 
-export class Interpreter {
-    private globalScope: Scope;
-    private realm: Realm;
-    constructor() {
-        const intrinsics = createIntrinsics();
-        this.realm = {
-            intrinsics,
-            globalObject: createGlobal(intrinsics),
-        };
-        this.globalScope = {
-            parent: undefined,
-            object: this.realm.globalObject,
-        };
-    }
-    private defineFunction(functionDeclaration: FunctionDeclaration) {}
-
-    *runBlock(ctx: Context, block: Block): Generator<unknown, Completion> {
-        let completion1: Completion = {
-            type: "normalCompletion",
-            hasValue: false,
-        };
-        for (const statement of block.statementList) {
-            if (completion1.type === "abruptCompletion") {
-                break;
-            }
-            const completion3 = yield* this.runStatement(ctx, statement);
-            if (completion3.hasValue || !completion1.hasValue) {
-                completion1 = completion3;
-                continue;
-            }
-            if (completion3.type === "abruptCompletion" && completion3.cause === "break") {
-                completion1 = {
-                    type: "abruptCompletion",
-                    cause: "break",
-                    hasValue: true,
-                    value: completion1.value,
-                };
-                continue;
-            }
-            if (completion3.type === "abruptCompletion" && completion3.cause === "continue") {
-                completion1 = {
-                    type: "abruptCompletion",
-                    cause: "break",
-                    hasValue: true,
-                    value: completion1.value,
-                };
-                continue;
-            }
+function* runBlock(ctx: Context, block: Block): Generator<unknown, Completion> {
+    let completion1: Completion = {
+        type: "normalCompletion",
+        hasValue: false,
+    };
+    for (const statement of block.statementList) {
+        if (completion1.type === "abruptCompletion") {
+            break;
+        }
+        const completion3 = yield* runStatement(ctx, statement);
+        if (completion3.hasValue || !completion1.hasValue) {
+            completion1 = completion3;
+            continue;
+        }
+        if (completion3.type === "abruptCompletion" && completion3.cause === "break") {
             completion1 = {
-                type: "normalCompletion",
+                type: "abruptCompletion",
+                cause: "break",
                 hasValue: true,
                 value: completion1.value,
             };
+            continue;
         }
-        return completion1;
-    }
-
-    *referenceGetValue(reference: RefOrValue): Generator<unknown, Value> {
-        if (!isReference(reference)) {
-            return reference;
+        if (completion3.type === "abruptCompletion" && completion3.cause === "continue") {
+            completion1 = {
+                type: "abruptCompletion",
+                cause: "break",
+                hasValue: true,
+                value: completion1.value,
+            };
+            continue;
         }
-        if (reference.baseObject == null) {
-            throw new ReferenceError(`${reference.name}`);
-        }
-        return yield* getProperty(reference.baseObject, reference.name);
-    }
-
-    *referencePutValue(ctx: Context, reference: RefOrValue, value: Value): Generator<unknown, unknown> {
-        if (!isReference(reference)) {
-            throw new ReferenceError("not reference");
-        }
-        yield* putProperty(ctx, reference.baseObject ?? ctx.realm.globalObject, reference.name, value);
-        return;
-    }
-
-    *runEmptyStatement(_ctx: Context, _statement: EmptyStatement): Generator<unknown, Completion> {
-        return {
-            type: "normalCompletion",
-            hasValue: false,
-        };
-    }
-
-    resolveIdentifier(scope: Scope, name: string): RefOrValue {
-        let s: Scope | undefined = scope;
-        while (s != null) {
-            if (hasProperty(s.object, name)) {
-                return {
-                    baseObject: s.object,
-                    name,
-                };
-            }
-            s = s.parent;
-        }
-        return {
-            baseObject: null,
-            name,
-        };
-    }
-
-    *evaluateList(ctx: Context, list: Expression[]): Generator<unknown, Value[]> {
-        const result: Value[] = [];
-        for (const e of list) {
-            result.push(yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, e)));
-        }
-        return result;
-    }
-
-    *evaluateExpression(ctx: Context, expression: Expression): Generator<unknown, RefOrValue> {
-        switch (expression.type) {
-            case "literalExpression":
-                return expression.value;
-            case "thisExpression":
-                return ctx.this;
-            case "identifierExpression":
-                return this.resolveIdentifier(ctx.scope, expression.name);
-            case "groupingOperator":
-                return yield* this.evaluateExpression(ctx, expression.expression);
-            case "memberOperator": {
-                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
-                if ("name" in expression) {
-                    return {
-                        baseObject: toObject(ctx.realm.intrinsics, left),
-                        name: expression.name,
-                    };
-                } else {
-                    const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
-                    return {
-                        baseObject: toObject(ctx.realm.intrinsics, left),
-                        name: yield* toString(ctx, right),
-                    };
-                }
-            }
-            case "newOperator": {
-                const value = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.expression));
-                let args: Value[] = [];
-                if (expression.argumentList != null) {
-                    args = yield* this.evaluateList(ctx, expression.argumentList);
-                }
-                if (!isObject(value)) {
-                    throw new TypeError("!isObject");
-                }
-                const construct = value.internalProperties.construct;
-                if (!construct) {
-                    throw new TypeError("not constructable");
-                }
-                const obj = yield* construct(ctx, args);
-                if (!isObject(obj)) {
-                    throw new TypeError("[[Construct]] result is not a object");
-                }
-                return obj;
-            }
-            case "callOperator": {
-                const valueRef = yield* this.evaluateExpression(ctx, expression.expression);
-                const args = yield* this.evaluateList(ctx, expression.argumentList);
-                const value = yield* this.referenceGetValue(valueRef);
-                if (!isObject(value)) {
-                    throw new TypeError("not Object");
-                }
-                const call = value.internalProperties.call;
-                if (call == null) {
-                    throw new TypeError("not callable");
-                }
-                let self = isReference(valueRef) ? valueRef.baseObject : null;
-                if (isActivationObject(self)) {
-                    self = null;
-                }
-                return yield* call(ctx, self, args);
-            }
-            case "postfixIncrementOperator":
-            case "postfixDecrementOperator":
-            case "deleteOperator":
-            case "voidOperator":
-            case "typeofOperator":
-            case "prefixIncrementOperator":
-            case "prefixDecrementOperator":
-            case "unaryPlusOperator":
-            case "unaryMiusOperator":
-            case "bitwiseNotOperator":
-            case "logicalNotOperator":
-                break;
-            case "multiplyOperator": {
-                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
-                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
-                return (yield* toNumber(ctx, left)) * (yield* toNumber(ctx, right));
-            }
-            case "divideOperator": {
-                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
-                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
-                return (yield* toNumber(ctx, left)) / (yield* toNumber(ctx, right));
-            }
-            case "moduloOperator": {
-                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
-                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
-                return (yield* toNumber(ctx, left)) % (yield* toNumber(ctx, right));
-            }
-            case "addOperator": {
-                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
-                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
-                // FIXME Date
-                const primitiveLeft = yield* toPrimitive(ctx, left, "number");
-                const primitiveRight = yield* toPrimitive(ctx, right, "number");
-                if (typeof primitiveLeft === "string" || typeof primitiveRight === "string") {
-                    return (yield* toString(ctx, primitiveLeft)) + (yield* toString(ctx, primitiveRight));
-                }
-                return (yield* toNumber(ctx, primitiveLeft)) + (yield* toNumber(ctx, primitiveRight));
-            }
-            case "subtractOperator": {
-                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
-                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
-                return (yield* toNumber(ctx, left)) - (yield* toNumber(ctx, right));
-            }
-            case "leftShiftOperator": {
-                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
-                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
-                return (yield* toNumber(ctx, left)) << (yield* toNumber(ctx, right)); // l
-            }
-            case "signedRightShiftOperator": {
-                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
-                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
-                return (yield* toNumber(ctx, left)) >> (yield* toNumber(ctx, right)); // l
-            }
-            case "unsignedRightShiftOperator": {
-                const left = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.left));
-                const right = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, expression.right));
-                return (yield* toNumber(ctx, left)) >>> (yield* toNumber(ctx, right)); // l
-            }
-            case "lessThanOperator":
-            case "greaterThanOperator":
-            case "lessThanOrEqualOperator":
-            case "greaterThanOrEqualOperator":
-            case "equalsOperator":
-            case "doesNotEqualsOperator":
-            case "bitwiseAndOperator":
-            case "bitwiseXorOperator":
-            case "bitwiseOrOperator":
-            case "logicalAndOperator":
-            case "logicalOrOperator":
-            case "conditionalOperator":
-                break;
-            case "assignmentOperator": {
-                switch (expression.operator) {
-                    case "=": {
-                        const leftRef = yield* this.evaluateExpression(ctx, expression.left);
-                        const rightRef = yield* this.evaluateExpression(ctx, expression.right);
-                        const right = yield* this.referenceGetValue(rightRef);
-                        yield* this.referencePutValue(ctx, leftRef, right);
-                        return right;
-                    }
-                    case "*=":
-                    case "/=":
-                    case "%=":
-                    case "+=":
-                    case "-=":
-                    case "<<=":
-                    case ">>=":
-                    case ">>>=":
-                    case "&=":
-                    case "^=":
-                    case "|=":
-                        break;
-                }
-                break;
-            }
-            case "commaOperator":
-                break;
-        }
-        throw new Error();
-    }
-
-    *runVariableStatement(ctx: Context, statement: VariableStatement): Generator<unknown, Completion> {
-        for (const decl of statement.variableDeclarationList) {
-            if (decl.initializer == null) {
-                continue;
-            }
-            const left = this.resolveIdentifier(ctx.scope, decl.name);
-            const rightRef =
-                decl.initializer == null ? undefined : yield* this.evaluateExpression(ctx, decl.initializer);
-            const right = yield* this.referenceGetValue(rightRef);
-            yield* this.referencePutValue(ctx, left, right);
-        }
-        return {
-            type: "normalCompletion",
-            hasValue: false,
-        };
-    }
-
-    *runExpressionStatement(ctx: Context, statement: ExpressionStatement): Generator<unknown, Completion> {
-        const value = yield* this.referenceGetValue(yield* this.evaluateExpression(ctx, statement.expression));
-        return {
+        completion1 = {
             type: "normalCompletion",
             hasValue: true,
-            value,
+            value: completion1.value,
         };
     }
+    return completion1;
+}
 
-    *runWithStatement(ctx: Context, statement: WithStatement): Generator<unknown, Completion> {
-        const ref = yield* this.evaluateExpression(ctx, statement.expression);
-        const value = yield* this.referenceGetValue(ref);
-        const object = toObject(ctx.realm.intrinsics, value);
-        const withScope: Scope = {
-            parent: ctx.scope,
-            object,
-        };
-        const withContext: Context = {
-            runtime: ctx.runtime,
-            scope: withScope,
-            this: ctx.this,
-            realm: ctx.realm,
-        };
-        return yield* this.runStatement(withContext, statement.statement);
+function* referenceGetValue(reference: RefOrValue): Generator<unknown, Value> {
+    if (!isReference(reference)) {
+        return reference;
     }
+    if (reference.baseObject == null) {
+        throw new ReferenceError(`${reference.name}`);
+    }
+    return yield* getProperty(reference.baseObject, reference.name);
+}
 
-    *runStatement(ctx: Context, statement: Statement): Generator<unknown, Completion> {
-        switch (statement.type) {
-            case "block":
-                return yield* this.runBlock(ctx, statement);
-            case "variableStatement":
-                return yield* this.runVariableStatement(ctx, statement);
-            case "emptyStatement":
-                return yield* this.runEmptyStatement(ctx, statement);
-            case "expressionStatement":
-                return yield* this.runExpressionStatement(ctx, statement);
-            case "ifStatement":
-            case "whileStatement":
-            case "forStatement":
-            case "forInStatement":
-                throw new Error();
-            case "continueStatement":
+function* referencePutValue(ctx: Context, reference: RefOrValue, value: Value): Generator<unknown, unknown> {
+    if (!isReference(reference)) {
+        throw new ReferenceError("not reference");
+    }
+    yield* putProperty(ctx, reference.baseObject ?? ctx.realm.globalObject, reference.name, value);
+    return;
+}
+
+function* runEmptyStatement(_ctx: Context, _statement: EmptyStatement): Generator<unknown, Completion> {
+    return {
+        type: "normalCompletion",
+        hasValue: false,
+    };
+}
+
+function resolveIdentifier(scope: Scope, name: string): RefOrValue {
+    let s: Scope | undefined = scope;
+    while (s != null) {
+        if (hasProperty(s.object, name)) {
+            return {
+                baseObject: s.object,
+                name,
+            };
+        }
+        s = s.parent;
+    }
+    return {
+        baseObject: null,
+        name,
+    };
+}
+
+function* evaluateList(ctx: Context, list: Expression[]): Generator<unknown, Value[]> {
+    const result: Value[] = [];
+    for (const e of list) {
+        result.push(yield* referenceGetValue(yield* evaluateExpression(ctx, e)));
+    }
+    return result;
+}
+
+function* evaluateExpression(ctx: Context, expression: Expression): Generator<unknown, RefOrValue> {
+    switch (expression.type) {
+        case "literalExpression":
+            return expression.value;
+        case "thisExpression":
+            return ctx.this;
+        case "identifierExpression":
+            return resolveIdentifier(ctx.scope, expression.name);
+        case "groupingOperator":
+            return yield* evaluateExpression(ctx, expression.expression);
+        case "memberOperator": {
+            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            if ("name" in expression) {
                 return {
-                    type: "abruptCompletion",
-                    cause: "continue",
-                    hasValue: false,
+                    baseObject: toObject(ctx.realm.intrinsics, left),
+                    name: expression.name,
                 };
-            case "breakStatement":
+            } else {
+                const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
                 return {
-                    type: "abruptCompletion",
-                    cause: "break",
-                    hasValue: false,
+                    baseObject: toObject(ctx.realm.intrinsics, left),
+                    name: yield* toString(ctx, right),
                 };
-            case "returnStatement":
-                throw new Error();
-            case "withStatement":
-                return yield* this.runWithStatement(ctx, statement);
-            default:
-                throw new Error();
-        }
-    }
-
-    private defineVariable(ctx: Context, statement: VariableStatement) {
-        for (const decl of statement.variableDeclarationList) {
-            if (!ctx.scope.object.properties.has(decl.name)) {
-                ctx.scope.object.properties.set(decl.name, {
-                    readOnly: false,
-                    dontEnum: false,
-                    dontDelete: true,
-                    internal: false,
-                    value: undefined,
-                });
             }
         }
-    }
-
-    private *run(source: string): Generator<unknown, Completion> {
-        const program = parse(source);
-        for (const element of program.sourceElements) {
-            if (element.type !== "functionDeclaration") {
-                continue;
+        case "newOperator": {
+            const value = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
+            let args: Value[] = [];
+            if (expression.argumentList != null) {
+                args = yield* evaluateList(ctx, expression.argumentList);
             }
-            this.defineFunction(element);
+            if (!isObject(value)) {
+                throw new TypeError("!isObject");
+            }
+            const construct = value.internalProperties.construct;
+            if (!construct) {
+                throw new TypeError("not constructable");
+            }
+            const obj = yield* construct(ctx, args);
+            if (!isObject(obj)) {
+                throw new TypeError("[[Construct]] result is not a object");
+            }
+            return obj;
         }
-        let completion: Completion = {
-            type: "normalCompletion",
-            hasValue: false,
-        };
-        const context: Context = {
-            runtime: this,
-            scope: this.globalScope,
-            this: this.globalScope.object,
-            realm: this.realm,
-        };
-        for (const element of program.sourceElements) {
-            if (element.type === "functionDeclaration") {
-                continue;
+        case "callOperator": {
+            const valueRef = yield* evaluateExpression(ctx, expression.expression);
+            const args = yield* evaluateList(ctx, expression.argumentList);
+            const value = yield* referenceGetValue(valueRef);
+            if (!isObject(value)) {
+                throw new TypeError("not Object");
             }
-            visitStatement(element, (statement) => {
-                if (statement.type === "variableStatement") {
-                    this.defineVariable(context, statement);
+            const call = value.internalProperties.call;
+            if (call == null) {
+                throw new TypeError("not callable");
+            }
+            let self = isReference(valueRef) ? valueRef.baseObject : null;
+            if (isActivationObject(self)) {
+                self = null;
+            }
+            return yield* call(ctx, self, args);
+        }
+        case "postfixIncrementOperator":
+        case "postfixDecrementOperator":
+        case "deleteOperator":
+        case "voidOperator":
+        case "typeofOperator":
+        case "prefixIncrementOperator":
+        case "prefixDecrementOperator":
+        case "unaryPlusOperator":
+        case "unaryMiusOperator":
+        case "bitwiseNotOperator":
+        case "logicalNotOperator":
+            break;
+        case "multiplyOperator": {
+            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return (yield* toNumber(ctx, left)) * (yield* toNumber(ctx, right));
+        }
+        case "divideOperator": {
+            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return (yield* toNumber(ctx, left)) / (yield* toNumber(ctx, right));
+        }
+        case "moduloOperator": {
+            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return (yield* toNumber(ctx, left)) % (yield* toNumber(ctx, right));
+        }
+        case "addOperator": {
+            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            // FIXME Date
+            const primitiveLeft = yield* toPrimitive(ctx, left, "number");
+            const primitiveRight = yield* toPrimitive(ctx, right, "number");
+            if (typeof primitiveLeft === "string" || typeof primitiveRight === "string") {
+                return (yield* toString(ctx, primitiveLeft)) + (yield* toString(ctx, primitiveRight));
+            }
+            return (yield* toNumber(ctx, primitiveLeft)) + (yield* toNumber(ctx, primitiveRight));
+        }
+        case "subtractOperator": {
+            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return (yield* toNumber(ctx, left)) - (yield* toNumber(ctx, right));
+        }
+        case "leftShiftOperator": {
+            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return (yield* toNumber(ctx, left)) << (yield* toNumber(ctx, right)); // l
+        }
+        case "signedRightShiftOperator": {
+            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return (yield* toNumber(ctx, left)) >> (yield* toNumber(ctx, right)); // l
+        }
+        case "unsignedRightShiftOperator": {
+            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return (yield* toNumber(ctx, left)) >>> (yield* toNumber(ctx, right)); // l
+        }
+        case "lessThanOperator":
+        case "greaterThanOperator":
+        case "lessThanOrEqualOperator":
+        case "greaterThanOrEqualOperator":
+        case "equalsOperator":
+        case "doesNotEqualsOperator":
+        case "bitwiseAndOperator":
+        case "bitwiseXorOperator":
+        case "bitwiseOrOperator":
+        case "logicalAndOperator":
+        case "logicalOrOperator":
+        case "conditionalOperator":
+            break;
+        case "assignmentOperator": {
+            switch (expression.operator) {
+                case "=": {
+                    const leftRef = yield* evaluateExpression(ctx, expression.left);
+                    const rightRef = yield* evaluateExpression(ctx, expression.right);
+                    const right = yield* referenceGetValue(rightRef);
+                    yield* referencePutValue(ctx, leftRef, right);
+                    return right;
                 }
+                case "*=":
+                case "/=":
+                case "%=":
+                case "+=":
+                case "-=":
+                case "<<=":
+                case ">>=":
+                case ">>>=":
+                case "&=":
+                case "^=":
+                case "|=":
+                    break;
+            }
+            break;
+        }
+        case "commaOperator":
+            break;
+    }
+    throw new Error();
+}
+
+function* runVariableStatement(ctx: Context, statement: VariableStatement): Generator<unknown, Completion> {
+    for (const decl of statement.variableDeclarationList) {
+        if (decl.initializer == null) {
+            continue;
+        }
+        const left = resolveIdentifier(ctx.scope, decl.name);
+        const rightRef = decl.initializer == null ? undefined : yield* evaluateExpression(ctx, decl.initializer);
+        const right = yield* referenceGetValue(rightRef);
+        yield* referencePutValue(ctx, left, right);
+    }
+    return {
+        type: "normalCompletion",
+        hasValue: false,
+    };
+}
+
+function* runExpressionStatement(ctx: Context, statement: ExpressionStatement): Generator<unknown, Completion> {
+    const value = yield* referenceGetValue(yield* evaluateExpression(ctx, statement.expression));
+    return {
+        type: "normalCompletion",
+        hasValue: true,
+        value,
+    };
+}
+
+function* runWithStatement(ctx: Context, statement: WithStatement): Generator<unknown, Completion> {
+    const ref = yield* evaluateExpression(ctx, statement.expression);
+    const value = yield* referenceGetValue(ref);
+    const object = toObject(ctx.realm.intrinsics, value);
+    const withScope: Scope = {
+        parent: ctx.scope,
+        object,
+    };
+    const withContext: Context = {
+        scope: withScope,
+        this: ctx.this,
+        realm: ctx.realm,
+    };
+    return yield* runStatement(withContext, statement.statement);
+}
+
+function* runStatement(ctx: Context, statement: Statement): Generator<unknown, Completion> {
+    switch (statement.type) {
+        case "block":
+            return yield* runBlock(ctx, statement);
+        case "variableStatement":
+            return yield* runVariableStatement(ctx, statement);
+        case "emptyStatement":
+            return yield* runEmptyStatement(ctx, statement);
+        case "expressionStatement":
+            return yield* runExpressionStatement(ctx, statement);
+        case "ifStatement":
+        case "whileStatement":
+        case "forStatement":
+        case "forInStatement":
+            throw new Error();
+        case "continueStatement":
+            return {
+                type: "abruptCompletion",
+                cause: "continue",
+                hasValue: false,
+            };
+        case "breakStatement":
+            return {
+                type: "abruptCompletion",
+                cause: "break",
+                hasValue: false,
+            };
+        case "returnStatement":
+            throw new Error();
+        case "withStatement":
+            return yield* runWithStatement(ctx, statement);
+        default:
+            throw new Error();
+    }
+}
+
+function defineVariable(ctx: Context, statement: VariableStatement) {
+    for (const decl of statement.variableDeclarationList) {
+        if (!ctx.scope.object.properties.has(decl.name)) {
+            ctx.scope.object.properties.set(decl.name, {
+                readOnly: false,
+                dontEnum: false,
+                dontDelete: true,
+                internal: false,
+                value: undefined,
             });
         }
-        for (const element of program.sourceElements) {
-            if (element.type === "functionDeclaration") {
-                continue;
-            }
-            const result = yield* this.runStatement(context, element);
-            if (result.hasValue) {
-                completion = result;
-            }
-        }
-        return completion;
     }
+}
 
-    async runAsync(source: string): Promise<Completion> {
-        const iter = this.run(source);
-        let lastResult: any = undefined;
-        while (true) {
-            const { value, done } = iter.next(lastResult);
-            if (value instanceof Promise) {
-                lastResult = await value;
-            } else {
-                lastResult = undefined;
+function* run(source: string): Generator<unknown, Completion> {
+    const program = parse(source);
+    for (const element of program.sourceElements) {
+        if (element.type !== "functionDeclaration") {
+            continue;
+        }
+    }
+    let completion: Completion = {
+        type: "normalCompletion",
+        hasValue: false,
+    };
+    const intrinsics = createIntrinsics();
+    const realm = {
+        intrinsics,
+        globalObject: createGlobal(intrinsics),
+    };
+    const globalScope = {
+        parent: undefined,
+        object: realm.globalObject,
+    };
+    const context: Context = {
+        scope: globalScope,
+        this: globalScope.object,
+        realm: realm,
+    };
+    for (const element of program.sourceElements) {
+        if (element.type === "functionDeclaration") {
+            continue;
+        }
+        visitStatement(element, (statement) => {
+            if (statement.type === "variableStatement") {
+                defineVariable(context, statement);
             }
-            if (done) {
-                return value;
-            }
+        });
+    }
+    for (const element of program.sourceElements) {
+        if (element.type === "functionDeclaration") {
+            continue;
+        }
+        const result = yield* runStatement(context, element);
+        if (result.hasValue) {
+            completion = result;
+        }
+    }
+    return completion;
+}
+
+export async function runAsync(source: string): Promise<Completion> {
+    const iter = run(source);
+    let lastResult: any = undefined;
+    while (true) {
+        const { value, done } = iter.next(lastResult);
+        if (value instanceof Promise) {
+            lastResult = await value;
+        } else {
+            lastResult = undefined;
+        }
+        if (done) {
+            return value;
         }
     }
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { tokenize, Token, parse, SourceElement, Expression, Statement, Program, Interpreter } from ".";
+import { tokenize, Token, parse, SourceElement, Expression, Statement, Program, runAsync } from ".";
 
 function filterByValue(tokens: Iterable<Token>): (string | null | boolean | number)[] {
     return [...tokens].map((x) => x.value);
@@ -1108,343 +1108,341 @@ anc /= 2;
 });
 
 test("interpreter", async () => {
-    expect(await new Interpreter().runAsync("1*2+3*4;")).toStrictEqual({
+    expect(await runAsync("1*2+3*4;")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1 * 2 + 3 * 4,
     });
-    expect(await new Interpreter().runAsync("1*(2+3)*4;")).toStrictEqual({
+    expect(await runAsync("1*(2+3)*4;")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1 * (2 + 3) * 4,
     });
-    expect(await new Interpreter().runAsync("1+'2';")).toStrictEqual({
+    expect(await runAsync("1+'2';")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "12",
     });
-    expect(await new Interpreter().runAsync("'1'+'2';")).toStrictEqual({
+    expect(await runAsync("'1'+'2';")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "12",
     });
-    expect(await new Interpreter().runAsync("'1'+2;")).toStrictEqual({
+    expect(await runAsync("'1'+2;")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "12",
     });
-    expect(await new Interpreter().runAsync("'10'*2;")).toStrictEqual({
+    expect(await runAsync("'10'*2;")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 20,
     });
-    expect(await new Interpreter().runAsync("NaN;")).toStrictEqual({
+    expect(await runAsync("NaN;")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: NaN,
     });
-    expect(await new Interpreter().runAsync("Object.length;")).toStrictEqual({
+    expect(await runAsync("Object.length;")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("this.Object.length;")).toStrictEqual({
+    expect(await runAsync("this.Object.length;")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("Object['length'];")).toStrictEqual({
+    expect(await runAsync("Object['length'];")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("this.Object['length'];")).toStrictEqual({
+    expect(await runAsync("this.Object['length'];")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("(new Object).constructor.length")).toStrictEqual({
+    expect(await runAsync("(new Object).constructor.length")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("new Object().constructor.length")).toStrictEqual({
+    expect(await runAsync("new Object().constructor.length")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("String(11)")).toStrictEqual({
+    expect(await runAsync("String(11)")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "11",
     });
-    expect(await new Interpreter().runAsync("String()")).toStrictEqual({
+    expect(await runAsync("String()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "",
     });
-    expect(await new Interpreter().runAsync("Number(11)")).toStrictEqual({
+    expect(await runAsync("Number(11)")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 11,
     });
-    expect(await new Interpreter().runAsync("Number()")).toStrictEqual({
+    expect(await runAsync("Number()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 0,
     });
-    expect(await new Interpreter().runAsync("Boolean()")).toStrictEqual({
+    expect(await runAsync("Boolean()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: false,
     });
-    expect(await new Interpreter().runAsync("Boolean(true)")).toStrictEqual({
+    expect(await runAsync("Boolean(true)")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: true,
     });
-    expect(await new Interpreter().runAsync("String.prototype + '1'")).toStrictEqual({
+    expect(await runAsync("String.prototype + '1'")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("String.prototype.length")).toStrictEqual({
+    expect(await runAsync("String.prototype.length")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 0,
     });
-    expect(await new Interpreter().runAsync("String.prototype + 1")).toStrictEqual({
+    expect(await runAsync("String.prototype + 1")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("'1' + String.prototype")).toStrictEqual({
+    expect(await runAsync("'1' + String.prototype")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("1 + String.prototype")).toStrictEqual({
+    expect(await runAsync("1 + String.prototype")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("String.prototype.valueOf()")).toStrictEqual({
+    expect(await runAsync("String.prototype.valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "",
     });
-    expect(await new Interpreter().runAsync("String.prototype.toString()")).toStrictEqual({
+    expect(await runAsync("String.prototype.toString()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "",
     });
-    expect(await new Interpreter().runAsync("new String('1')+1")).toStrictEqual({
+    expect(await runAsync("new String('1')+1")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "11",
     });
-    expect(await new Interpreter().runAsync("new Number(1).valueOf()")).toStrictEqual({
+    expect(await runAsync("new Number(1).valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("new Number(16).toString()")).toStrictEqual({
+    expect(await runAsync("new Number(16).toString()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "16",
     });
-    expect(await new Interpreter().runAsync("new Number(16).toString(16)")).toStrictEqual({
+    expect(await runAsync("new Number(16).toString(16)")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "10",
     });
-    expect(await new Interpreter().runAsync("new Number(16).toString(Number.undef)")).toStrictEqual({
+    expect(await runAsync("new Number(16).toString(Number.undef)")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "16",
     });
-    expect(await new Interpreter().runAsync("new Number(16).toString(2)")).toStrictEqual({
+    expect(await runAsync("new Number(16).toString(2)")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "10000",
     });
-    expect(await new Interpreter().runAsync("new Number(16).toString(36)")).toStrictEqual({
+    expect(await runAsync("new Number(16).toString(36)")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "g",
     });
-    await expect(new Interpreter().runAsync("Number(1)Number(2)")).rejects.toThrow();
-    await expect(new Interpreter().runAsync("new Number(16).toString(null)")).rejects.toThrow();
-    await expect(new Interpreter().runAsync("new Number(16).toString(1)")).rejects.toThrow();
-    await expect(new Interpreter().runAsync("new Number(16).toString(37)")).rejects.toThrow();
-    expect(await new Interpreter().runAsync("Number.prototype.valueOf()")).toStrictEqual({
+    await expect(runAsync("Number(1)Number(2)")).rejects.toThrow();
+    await expect(runAsync("new Number(16).toString(null)")).rejects.toThrow();
+    await expect(runAsync("new Number(16).toString(1)")).rejects.toThrow();
+    await expect(runAsync("new Number(16).toString(37)")).rejects.toThrow();
+    expect(await runAsync("Number.prototype.valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 0,
     });
-    expect(await new Interpreter().runAsync("'1'.toString()")).toStrictEqual({
+    expect(await runAsync("'1'.toString()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("(1).toString()")).toStrictEqual({
+    expect(await runAsync("(1).toString()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    await expect(new Interpreter().runAsync("1.toString()")).rejects.toThrow();
-    expect(await new Interpreter().runAsync("1.0.toString()")).toStrictEqual({
+    await expect(runAsync("1.toString()")).rejects.toThrow();
+    expect(await runAsync("1.0.toString()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("1e0.toString()")).toStrictEqual({
+    expect(await runAsync("1e0.toString()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("true.toString()")).toStrictEqual({
+    expect(await runAsync("true.toString()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "true",
     });
-    expect(await new Interpreter().runAsync("false.toString()")).toStrictEqual({
+    expect(await runAsync("false.toString()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "false",
     });
-    expect(await new Interpreter().runAsync("Boolean(true).toString()")).toStrictEqual({
+    expect(await runAsync("Boolean(true).toString()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "true",
     });
-    expect(await new Interpreter().runAsync("Boolean(new Object())")).toStrictEqual({
+    expect(await runAsync("Boolean(new Object())")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: true,
     });
-    expect(await new Interpreter().runAsync("Boolean.prototype.valueOf()")).toStrictEqual({
+    expect(await runAsync("Boolean.prototype.valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: false,
     });
-    expect(await new Interpreter().runAsync("new Object('1').valueOf()")).toStrictEqual({
+    expect(await runAsync("new Object('1').valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("new Object('12345').length")).toStrictEqual({
+    expect(await runAsync("new Object('12345').length")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 5,
     });
-    expect(await new Interpreter().runAsync("new Object('1').toString()")).toStrictEqual({
+    expect(await runAsync("new Object('1').toString()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("new Object('1') + '2'")).toStrictEqual({
+    expect(await runAsync("new Object('1') + '2'")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "12",
     });
-    expect(await new Interpreter().runAsync("new Object('1').valueOf()")).toStrictEqual({
+    expect(await runAsync("new Object('1').valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("new Object(1).valueOf()")).toStrictEqual({
+    expect(await runAsync("new Object(1).valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("new Object(true).valueOf()")).toStrictEqual({
+    expect(await runAsync("new Object(true).valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: true,
     });
-    expect(await new Interpreter().runAsync("new Object(new Object(true)).valueOf()")).toStrictEqual({
+    expect(await runAsync("new Object(new Object(true)).valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: true,
     });
-    expect(await new Interpreter().runAsync("null")).toStrictEqual({
+    expect(await runAsync("null")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: null,
     });
-    expect(await new Interpreter().runAsync("Object.hoge")).toStrictEqual({
+    expect(await runAsync("Object.hoge")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: undefined,
     });
-    expect(await new Interpreter().runAsync("Object.prototype.toString()")).toStrictEqual({
+    expect(await runAsync("Object.prototype.toString()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "[object Object]",
     });
-    await expect(new Interpreter().runAsync("null.toString()")).rejects.toThrow();
-    await expect(new Interpreter().runAsync("new 1")).rejects.toThrow();
-    await expect(new Interpreter().runAsync("new 'a'")).rejects.toThrow();
-    await expect(new Interpreter().runAsync("new new Object()")).rejects.toThrow();
-    expect(await new Interpreter().runAsync("Object.prototype.constructor(1).valueOf()")).toStrictEqual({
+    await expect(runAsync("null.toString()")).rejects.toThrow();
+    await expect(runAsync("new 1")).rejects.toThrow();
+    await expect(runAsync("new 'a'")).rejects.toThrow();
+    await expect(runAsync("new new Object()")).rejects.toThrow();
+    expect(await runAsync("Object.prototype.constructor(1).valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("Object.prototype.constructor(true).valueOf()")).toStrictEqual({
+    expect(await runAsync("Object.prototype.constructor(true).valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: true,
     });
-    expect(await new Interpreter().runAsync("Object.prototype.constructor('1').valueOf()")).toStrictEqual({
+    expect(await runAsync("Object.prototype.constructor('1').valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("String.prototype.constructor(1)")).toStrictEqual({
+    expect(await runAsync("String.prototype.constructor(1)")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("Number.prototype.constructor('1')")).toStrictEqual({
+    expect(await runAsync("Number.prototype.constructor('1')")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("Boolean.prototype.constructor(1)")).toStrictEqual({
+    expect(await runAsync("Boolean.prototype.constructor(1)")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: true,
     });
-    expect(await new Interpreter().runAsync("Boolean.prototype.constructor(1)")).toStrictEqual({
+    expect(await runAsync("Boolean.prototype.constructor(1)")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: true,
     });
-    expect(await new Interpreter().runAsync("new String.prototype.constructor(1).valueOf()")).toStrictEqual({
+    expect(await runAsync("new String.prototype.constructor(1).valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: "1",
     });
-    expect(await new Interpreter().runAsync("new Number.prototype.constructor('1').valueOf()")).toStrictEqual({
+    expect(await runAsync("new Number.prototype.constructor('1').valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("new Boolean.prototype.constructor(1).valueOf()")).toStrictEqual({
+    expect(await runAsync("new Boolean.prototype.constructor(1).valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: true,
     });
-    expect(
-        await new Interpreter().runAsync("new Boolean.prototype.constructor.prototype.constructor(1).valueOf()")
-    ).toStrictEqual({
+    expect(await runAsync("new Boolean.prototype.constructor.prototype.constructor(1).valueOf()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: true,
     });
-    expect(await new Interpreter().runAsync("new Boolean.prototype.constructor(1)")).toMatchObject({
+    expect(await runAsync("new Boolean.prototype.constructor(1)")).toMatchObject({
         type: "normalCompletion",
         hasValue: true,
         value: {
@@ -1453,7 +1451,7 @@ test("interpreter", async () => {
             },
         },
     });
-    expect(await new Interpreter().runAsync("new Number.prototype.constructor(1)")).toMatchObject({
+    expect(await runAsync("new Number.prototype.constructor(1)")).toMatchObject({
         type: "normalCompletion",
         hasValue: true,
         value: {
@@ -1462,7 +1460,7 @@ test("interpreter", async () => {
             },
         },
     });
-    expect(await new Interpreter().runAsync("new String.prototype.constructor(1)")).toMatchObject({
+    expect(await runAsync("new String.prototype.constructor(1)")).toMatchObject({
         type: "normalCompletion",
         hasValue: true,
         value: {
@@ -1471,7 +1469,7 @@ test("interpreter", async () => {
             },
         },
     });
-    expect(await new Interpreter().runAsync("new Boolean(1)")).toMatchObject({
+    expect(await runAsync("new Boolean(1)")).toMatchObject({
         type: "normalCompletion",
         hasValue: true,
         value: {
@@ -1480,7 +1478,7 @@ test("interpreter", async () => {
             },
         },
     });
-    expect(await new Interpreter().runAsync("new Number(1)")).toMatchObject({
+    expect(await runAsync("new Number(1)")).toMatchObject({
         type: "normalCompletion",
         hasValue: true,
         value: {
@@ -1489,7 +1487,7 @@ test("interpreter", async () => {
             },
         },
     });
-    expect(await new Interpreter().runAsync("new String(1)")).toMatchObject({
+    expect(await runAsync("new String(1)")).toMatchObject({
         type: "normalCompletion",
         hasValue: true,
         value: {
@@ -1498,33 +1496,33 @@ test("interpreter", async () => {
             },
         },
     });
-    expect(await new Interpreter().runAsync("a = 1")).toStrictEqual({
+    expect(await runAsync("a = 1")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("a = 1; a")).toStrictEqual({
+    expect(await runAsync("a = 1; a")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("Object = 1; Object")).toStrictEqual({
+    expect(await runAsync("Object = 1; Object")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("Object.length = 123; Object.length")).toStrictEqual({
+    expect(await runAsync("Object.length = 123; Object.length")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 1,
     });
-    expect(await new Interpreter().runAsync("Object.prototype.length = 123; Object.prototype.length")).toStrictEqual({
+    expect(await runAsync("Object.prototype.length = 123; Object.prototype.length")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 123,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
 Object.prototype.hoge = 1;
 o1 = new Object;
 o1.hoge = 123;
@@ -1538,7 +1536,7 @@ o2.hoge;
         value: 2,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
 Object.prototype.hoge = 1;
 o1 = new Object;
 o1.hoge = 123;
@@ -1552,7 +1550,7 @@ o1.hoge;
         value: 123,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
 o1 = new Object;
 Object.prototype.hoge = 1;
 o1.hoge;
@@ -1563,7 +1561,7 @@ o1.hoge;
         value: 1,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
 o1 = new Object;
 Object.prototype.hoge = 1;
 o1.hoge = 2;
@@ -1575,7 +1573,7 @@ Object.prototype.hoge;
         value: 1,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
 Number.prototype.hoge = 1;
 1.0.hoge = 123;
 1.0.hoge = 1.0.hoge + 456;
@@ -1586,7 +1584,7 @@ Number.prototype.hoge = 1;
         value: 457,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
             with (new Object) {
                 hoge = 1;
             }
@@ -1598,7 +1596,7 @@ Number.prototype.hoge = 1;
         value: 1,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
             o = new Object;
             o.a = 1;
             with (o) {
@@ -1612,7 +1610,7 @@ Number.prototype.hoge = 1;
         value: 2,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
             abc;
             var abc
         `)
@@ -1622,7 +1620,7 @@ Number.prototype.hoge = 1;
         value: undefined,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
             abc = 9;
             var abc
         `)
@@ -1632,7 +1630,7 @@ Number.prototype.hoge = 1;
         value: 9,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
             abc = 9;
             var abc;
             abc;
@@ -1643,7 +1641,7 @@ Number.prototype.hoge = 1;
         value: 9,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
             abc = 9;
             var abc = 10;
             abc;
@@ -1654,7 +1652,7 @@ Number.prototype.hoge = 1;
         value: 10,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
             abc = 9;
             var abc = abc - 9;
             abc;
@@ -1665,7 +1663,7 @@ Number.prototype.hoge = 1;
         value: 0,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
             var abc = abc; abc;
         `)
     ).toStrictEqual({
@@ -1673,19 +1671,19 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: undefined,
     });
-    expect(await new Interpreter().runAsync(String.raw`Function.prototype()`)).toStrictEqual({
+    expect(await runAsync(String.raw`Function.prototype()`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: undefined,
     });
-    /*expect(await new Interpreter().runAsync(String.raw`Function.prototype.constructor.prototype()`)).toStrictEqual({
+    /*expect(await runAsync(String.raw`Function.prototype.constructor.prototype()`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: undefined,
     });*/
-    await expect(new Interpreter().runAsync("new Object.prototype")).rejects.toThrow();
-    await expect(new Interpreter().runAsync("Object.prototype()")).rejects.toThrow();
-    expect(await new Interpreter().runAsync("new Object().toString")).toMatchObject({
+    await expect(runAsync("new Object.prototype")).rejects.toThrow();
+    await expect(runAsync("Object.prototype()")).rejects.toThrow();
+    expect(await runAsync("new Object().toString")).toMatchObject({
         type: "normalCompletion",
         hasValue: true,
         value: {
@@ -1695,7 +1693,7 @@ Number.prototype.hoge = 1;
         },
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
         Function.prototype.hoge = 1
         new Object().toString.hoge
         `)
@@ -1705,7 +1703,7 @@ Number.prototype.hoge = 1;
         value: 1,
     });
     expect(
-        await new Interpreter().runAsync(String.raw`
+        await runAsync(String.raw`
         a = new Object().toString
         a()
         `)
