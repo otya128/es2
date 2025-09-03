@@ -3476,6 +3476,130 @@ function createIntrinsics(): Intrinsics {
             1
         ),
     });
+    stringPrototype.properties.set("charAt", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* stringCharAt(ctx, self, args) {
+                const str = yield* toString(ctx, self);
+                const pos = yield* toNumber(ctx, args[0]);
+                return str.charAt(pos); // l
+            },
+            1
+        ),
+    });
+    stringPrototype.properties.set("charCodeAt", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* stringCharCodeAt(ctx, self, args) {
+                const str = yield* toString(ctx, self);
+                const pos = yield* toNumber(ctx, args[0]);
+                return str.charCodeAt(pos); // l
+            },
+            1
+        ),
+    });
+    stringPrototype.properties.set("indexOf", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* stringIndexOf(ctx, self, args) {
+                const str = yield* toString(ctx, self);
+                const searchStr = yield* toString(ctx, args[0]);
+                const position = args[1] === undefined ? 0 : toInteger(yield* toNumber(ctx, args[1]));
+                return str.indexOf(searchStr, position); // l
+            },
+            1
+        ),
+    });
+    stringPrototype.properties.set("lastIndexOf", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* stringLastIndexOf(ctx, self, args) {
+                const str = yield* toString(ctx, self);
+                const searchStr = yield* toString(ctx, args[0]);
+                const position = args[1] === undefined ? NaN : toInteger(yield* toNumber(ctx, args[1]));
+                return str.lastIndexOf(searchStr, position); // l
+            },
+            1
+        ),
+    });
+    stringPrototype.properties.set("split", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* stringSplit(ctx, self, args) {
+                const str = yield* toString(ctx, self);
+                if (args[0] === undefined) {
+                    return yield* arrayConstructor(ctx, [str]);
+                }
+                const separator = yield* toString(ctx, args[0]);
+                return yield* arrayConstructor(ctx, str.split(separator));
+            },
+            1
+        ),
+    });
+    stringPrototype.properties.set("substring", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* stringSubstring(ctx, self, args) {
+                const str = yield* toString(ctx, self);
+                const start = toInteger(yield* toNumber(ctx, args[0]));
+                const end = args[1] == undefined ? undefined : toInteger(yield* toNumber(ctx, args[1]));
+                return str.substring(start, end);
+            },
+            2
+        ),
+    });
+    stringPrototype.properties.set("toLowerCase", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* stringToLowerCase(ctx, self, _args) {
+                const str = yield* toString(ctx, self);
+                return str.toLowerCase();
+            },
+            1
+        ),
+    });
+    stringPrototype.properties.set("toUpperCase", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* stringToUpperCase(ctx, self, _args) {
+                const str = yield* toString(ctx, self);
+                return str.toUpperCase();
+            },
+            1
+        ),
+    });
     string.properties.set("prototype", {
         readOnly: true,
         dontEnum: true,
