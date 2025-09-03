@@ -3857,6 +3857,55 @@ function createIntrinsics(): Intrinsics {
         },
         1
     );
+    const parseIntFunction = newNativeFunction(
+        functionPrototype,
+        function* parseIntFunction(ctx, _self, args) {
+            const string = yield* toString(ctx, args[0]);
+            const radix = yield* toNumber(ctx, args[1]);
+            return parseInt(string, radix); // l
+        },
+        2
+    );
+    const parseFloatFunction = newNativeFunction(
+        functionPrototype,
+        function* parseFloatFunction(ctx, _self, args) {
+            const string = yield* toString(ctx, args[0]);
+            return parseFloat(string); // l
+        },
+        1
+    );
+    const escapeFunction = newNativeFunction(
+        functionPrototype,
+        function* escapeFunction(ctx, _self, args) {
+            const string = yield* toString(ctx, args[0]);
+            return escape(string); // l
+        },
+        1
+    );
+    const unescapeFunction = newNativeFunction(
+        functionPrototype,
+        function* unescapeFunction(ctx, _self, args) {
+            const string = yield* toString(ctx, args[0]);
+            return unescape(string); // l
+        },
+        1
+    );
+    const isNaNFunction = newNativeFunction(
+        functionPrototype,
+        function* isNaNFunction(ctx, _self, args) {
+            const number = yield* toNumber(ctx, args[0]);
+            return isNaN(number);
+        },
+        1
+    );
+    const isFiniteFunction = newNativeFunction(
+        functionPrototype,
+        function* isFiniteFunction(ctx, _self, args) {
+            const number = yield* toNumber(ctx, args[0]);
+            return isFinite(number);
+        },
+        1
+    );
     const math = newObject(objectPrototype);
     math.internalProperties.class = "Math";
     for (const a of ["E", "LN10", "LN2", "LOG2E", "LOG10E", "PI", "SQRT1_2", "SQRT2"] as const) {
@@ -3932,6 +3981,12 @@ function createIntrinsics(): Intrinsics {
     }
     return {
         eval: evalFunction,
+        parseInt: parseIntFunction,
+        parseFloat: parseFloatFunction,
+        escape: escapeFunction,
+        unescape: unescapeFunction,
+        isNaN: isNaNFunction,
+        isFinite: isFiniteFunction,
         Object: object,
         ObjectPrototype: objectPrototype,
         Function: functionObject,
@@ -3957,16 +4012,6 @@ function createGlobal(intrinsics: Intrinsics): InterpreterObject {
         },
         properties: new Map([
             [
-                "eval",
-                {
-                    readOnly: false,
-                    dontEnum: true,
-                    dontDelete: false,
-                    internal: false,
-                    value: intrinsics.eval,
-                },
-            ],
-            [
                 "NaN",
                 {
                     readOnly: false,
@@ -3986,76 +4031,33 @@ function createGlobal(intrinsics: Intrinsics): InterpreterObject {
                     value: Infinity,
                 },
             ],
-            [
-                "Object",
+            ...(
+                [
+                    "eval",
+                    "parseInt",
+                    "parseFloat",
+                    "escape",
+                    "unescape",
+                    "isNaN",
+                    "isFinite",
+                    "Object",
+                    "Function",
+                    "Array",
+                    "String",
+                    "Boolean",
+                    "Number",
+                    "Math",
+                ] as const
+            ).map((name): [string, Property] => [
+                name,
                 {
                     readOnly: false,
                     dontEnum: true,
                     dontDelete: false,
                     internal: false,
-                    value: intrinsics.Object,
+                    value: intrinsics[name],
                 },
-            ],
-            [
-                "Function",
-                {
-                    readOnly: false,
-                    dontEnum: true,
-                    dontDelete: false,
-                    internal: false,
-                    value: intrinsics.Function,
-                },
-            ],
-            [
-                "Array",
-                {
-                    readOnly: false,
-                    dontEnum: true,
-                    dontDelete: false,
-                    internal: false,
-                    value: intrinsics.Array,
-                },
-            ],
-            [
-                "String",
-                {
-                    readOnly: false,
-                    dontEnum: true,
-                    dontDelete: false,
-                    internal: false,
-                    value: intrinsics.String,
-                },
-            ],
-            [
-                "Boolean",
-                {
-                    readOnly: false,
-                    dontEnum: true,
-                    dontDelete: false,
-                    internal: false,
-                    value: intrinsics.Boolean,
-                },
-            ],
-            [
-                "Number",
-                {
-                    readOnly: false,
-                    dontEnum: true,
-                    dontDelete: false,
-                    internal: false,
-                    value: intrinsics.Number,
-                },
-            ],
-            [
-                "Math",
-                {
-                    readOnly: false,
-                    dontEnum: true,
-                    dontDelete: false,
-                    internal: false,
-                    value: intrinsics.Math,
-                },
-            ],
+            ]),
         ]),
     };
 }

@@ -4367,6 +4367,36 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 1,
     });
+    expect(await runAsync(String.raw`parseInt("10")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 10,
+    });
+    expect(await runAsync(String.raw`parseInt("10", 16)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 16,
+    });
+    expect(await runAsync(String.raw`isFinite(0)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`isFinite(Infinity)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(await runAsync(String.raw`isNaN(0)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(await runAsync(String.raw`isNaN(NaN)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
     expect(
         await runAsync(String.raw`
         sleep(1);
