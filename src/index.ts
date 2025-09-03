@@ -3321,7 +3321,26 @@ function createIntrinsics(): Intrinsics {
         internal: false,
         value: booleanPrototype,
     });
+    const evalFunction = newNativeFunction(
+        functionPrototype,
+        // If value of the eval property is used in any way other than a direct call (that is, other than by the
+        // explicit use of its name as an Identifier which is the MemberExpression in a CallExpression), or if
+        // the eval property is assigned to, a runtime error may be generated.
+        function* evalFunc(ctx, _self, args) {
+            if (typeof args[0] !== "string") {
+                return args[0];
+            }
+            const source = args[0];
+            const completion = yield* run(source, ctx);
+            if (completion.type === "normalCompletion" && completion.hasValue) {
+                return completion.value;
+            }
+            return undefined;
+        },
+        1
+    );
     return {
+        eval: evalFunction,
         Object: object,
         ObjectPrototype: objectPrototype,
         Function: functionObject,
@@ -3343,6 +3362,16 @@ function createGlobal(intrinsics: Intrinsics): InterpreterObject {
             value: undefined,
         },
         properties: new Map([
+            [
+                "eval",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: intrinsics.eval,
+                },
+            ],
             [
                 "NaN",
                 {
@@ -4395,17 +4424,23 @@ function* newFunction(ctx: Context, parameters: string[], block: Block): Generat
     return func;
 }
 
-function* defineFunction(ctx: Context, decl: FunctionDeclaration): Generator<unknown, void> {
-    const func = yield* newFunction(ctx, decl.parameters, decl.block);
-    yield* putProperty(ctx, ctx.realm.globalObject, decl.name, func);
+function findActivationObjectScope(scope: Scope): Scope | undefined {
+    let s: Scope | undefined = scope;
+    while (s != null) {
+        if (s.activation) {
+            return s;
+        }
+        s = s.parent;
+    }
+    return undefined;
 }
 
-function* run(source: string): Generator<unknown, Completion> {
-    const program = parse(source);
-    let completion: Completion = {
-        type: "normalCompletion",
-        hasValue: false,
-    };
+function* defineFunction(ctx: Context, decl: FunctionDeclaration): Generator<unknown, void> {
+    const func = yield* newFunction(ctx, decl.parameters, decl.block);
+    yield* putProperty(ctx, findActivationObjectScope(ctx.scope)?.object ?? ctx.realm.globalObject, decl.name, func);
+}
+
+function createGlobalContext(): Context {
     const intrinsics = createIntrinsics();
     const globalObject = createGlobal(intrinsics);
     globalObject.properties.set("sleep", {
@@ -4438,6 +4473,15 @@ function* run(source: string): Generator<unknown, Completion> {
         scope: globalScope,
         this: globalScope.object,
         realm: realm,
+    };
+    return context;
+}
+
+function* run(source: string, context: Context): Generator<unknown, Completion> {
+    const program = parse(source);
+    let completion: Completion = {
+        type: "normalCompletion",
+        hasValue: false,
     };
     for (const element of program.sourceElements) {
         if (element.type !== "functionDeclaration") {
@@ -4473,7 +4517,7 @@ function* run(source: string): Generator<unknown, Completion> {
 }
 
 export async function runAsync(source: string): Promise<Completion> {
-    const iter = run(source);
+    const iter = run(source, createGlobalContext());
     let lastResult: any = undefined;
     while (true) {
         const { value, done } = iter.next(lastResult);

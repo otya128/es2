@@ -3439,6 +3439,115 @@ Number.prototype.hoge = 1;
     });
     expect(
         await runAsync(String.raw`
+        eval("1")
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        eval("var c = 1"); c;
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        eval("c = 1"); c;
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        a = new Object(); a.b = 1;with (a){eval("b");}
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        eval('a = new Object(); a.b = 1;with (a){eval("b");}')
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        a = 2; function f() { eval("var a = 1"); } a;
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(
+        await runAsync(String.raw`
+        function f() { eval("function g() {return 1;}"); return g(); } f();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function f() { eval("function g() {return 1;}"); return g(); } f(); typeof g;
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "undefined",
+    });
+    expect(
+        await runAsync(String.raw`
+        var d = 2; function f() { var d = 1; eval("function g() {return d;}"); return g(); } f();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        // ES2: The scope chain is initialised to contain the activation object followed by the global object.
+        value: 2,
+    });
+    expect(
+        await runAsync(String.raw`
+        eval(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        o = new Object(); eval(o) == o;
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        eval("")
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
+    });
+    expect(
+        await runAsync(String.raw`
         sleep(1);
     `)
     ).toStrictEqual({
