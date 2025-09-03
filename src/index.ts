@@ -3437,7 +3437,7 @@ function createIntrinsics(): Intrinsics {
         const value = args.length === 0 ? "" : yield* toString(ctx, args[0]);
         return newStringObject(ctx.realm.intrinsics.StringPrototype, value);
     };
-    const stringPrototype = newStringObject(object, "");
+    const stringPrototype = newStringObject(objectPrototype, "");
     stringPrototype.properties.set("constructor", {
         readOnly: false,
         dontEnum: true,
@@ -3657,7 +3657,7 @@ function createIntrinsics(): Intrinsics {
         internal: false,
         value: Number.POSITIVE_INFINITY,
     });
-    const numberPrototype = newNumberObject(object, 0);
+    const numberPrototype = newNumberObject(objectPrototype, 0);
     numberPrototype.properties.set("constructor", {
         readOnly: false,
         dontEnum: true,
@@ -3721,7 +3721,7 @@ function createIntrinsics(): Intrinsics {
         const value = args.length === 0 ? false : toBoolean(args[0]);
         return newBooleanObject(ctx.realm.intrinsics.BooleanPrototype, value);
     };
-    const booleanPrototype = newBooleanObject(object, false);
+    const booleanPrototype = newBooleanObject(objectPrototype, false);
     booleanPrototype.properties.set("constructor", {
         readOnly: false,
         dontEnum: true,
