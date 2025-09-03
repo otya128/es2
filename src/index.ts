@@ -1982,11 +1982,11 @@ function parseArgumentList(tokenizer: Tokenizer): AssignmentExpression[] {
     if (begin.type !== "punctuator" || begin.value !== "(") {
         throw new UnexpectedTokenError("ArgumentList", "(", begin);
     }
+    const token = tokenizer.next();
+    if (token.type === "punctuator" && token.value === ")") {
+        return argumentList;
+    }
     while (true) {
-        const token = tokenizer.next();
-        if (token.type === "punctuator" && token.value === ")") {
-            return argumentList;
-        }
         argumentList.push(parseAssignmentExpression(tokenizer));
         const endOrComma = tokenizer.current;
         if (endOrComma.type === "punctuator" && endOrComma.value === ")") {
@@ -1995,6 +1995,7 @@ function parseArgumentList(tokenizer: Tokenizer): AssignmentExpression[] {
         if (endOrComma.type !== "punctuator" && endOrComma.value !== ",") {
             throw new UnexpectedTokenError("ArgumentList", ",", endOrComma);
         }
+        tokenizer.next();
     }
 }
 

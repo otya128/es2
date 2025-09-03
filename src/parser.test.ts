@@ -275,6 +275,8 @@ test("parser", () => {
     expect(astToString(parse("abc.def.ghi"))).toStrictEqual(["(expr (member-ident (member-ident abc def) ghi))"]);
     expect(astToString(parse("abc[123]"))).toStrictEqual(["(expr (member-expr abc 123))"]);
     expect(astToString(parse("abc.def(1)"))).toStrictEqual(["(expr (call (member-ident abc def) 1))"]);
+    expect(error(() => astToString(parse("def(1, 2, 3, )")))).toBeTruthy();
+    expect(error(() => astToString(parse("new def(1, 2, 3, )")))).toBeTruthy();
     expect(astToString(parse("abc[123](1)"))).toStrictEqual(["(expr (call (member-expr abc 123) 1))"]);
     expect(astToString(parse("(abc[123])(1)"))).toStrictEqual(["(expr (call ((member-expr abc 123)) 1))"]);
     expect(astToString(parse("abc.def[123](1)"))).toStrictEqual([
