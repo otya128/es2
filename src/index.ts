@@ -2933,6 +2933,17 @@ function* toInt32(ctx: Context, value: Value): Generator<unknown, number> {
     return (yield* toNumber(ctx, value)) | 0; // l
 }
 
+function toUint32(n: number): number {
+    return n >>> 0; // l
+}
+
+function toInteger(n: number): number {
+    if (isNaN(n)) {
+        return 0;
+    }
+    return Math.trunc(n);
+}
+
 function toBoolean(value: Value): boolean {
     if (value === undefined || value === null) {
         return false;
@@ -2970,6 +2981,281 @@ function* constructFunction(ctx: Context, args: Value[]): Generator<unknown, Int
     }
     const block = parseStatementList(body);
     return yield* newFunction(ctx, parameters, block);
+}
+
+function isArrayIndex(p: string) {
+    const u = toUint32(Number(p));
+    return String(u) === p && u !== 0xffffffff;
+}
+
+function* putArrayProperty(
+    ctx: Context,
+    self: InterpreterObject,
+    propertyName: string,
+    value: Value
+): Generator<unknown, unknown> {
+    if (!canPutProperty(ctx, self, propertyName)) {
+        return;
+    }
+    let desc = self.properties.get(propertyName);
+    if (desc == null) {
+        desc = {
+            readOnly: false,
+            dontEnum: false,
+            dontDelete: false,
+            internal: false,
+            value,
+        };
+        self.properties.set(propertyName, desc);
+    } else if (propertyName !== "length") {
+        desc.value = value;
+    } else {
+        const num = yield* toNumber(ctx, value);
+        const integer = toInteger(num);
+        const uint32 = toUint32(num);
+        if (integer !== uint32) {
+            throw new RangeError("Invalid array length");
+        }
+        if (typeof desc.value !== "number") {
+            throw new Error();
+        }
+        for (const key of self.properties.keys()) {
+            if (!isArrayIndex(key)) {
+                continue;
+            }
+            if (uint32 <= Number(key) && Number(key) < desc.value) {
+                self.properties.delete(key);
+            }
+        }
+        desc.value = uint32;
+        return;
+    }
+    if (!isArrayIndex(propertyName)) {
+        return;
+    }
+    const lengthProp = self.properties.get("length");
+    const p = toUint32(Number(propertyName));
+    if (typeof lengthProp?.value !== "number") {
+        throw new Error();
+    }
+    if (p < lengthProp.value) {
+        return;
+    }
+    lengthProp.value = p + 1;
+}
+
+function* arrayConstructor(ctx: Context, args: Value[]): Generator<unknown, Value> {
+    let len;
+    let elements: Value[];
+    if (args.length === 1 && typeof args[0] === "number") {
+        len = toUint32(args[0]);
+        if (args[0] !== len) {
+            throw new RangeError("Invalid array length");
+        }
+        elements = [];
+    } else {
+        len = args.length;
+        elements = args;
+    }
+    const array: InterpreterObject = {
+        internalProperties: {
+            prototype: ctx.realm.intrinsics.ArrayPrototype,
+            class: "Array",
+            value: undefined,
+            put: putArrayProperty,
+        },
+        properties: new Map([
+            [
+                "length",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: true,
+                    internal: false,
+                    value: len,
+                },
+            ],
+            ...elements.map((value, i): [string, Property] => [
+                String(i),
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: true,
+                    internal: false,
+                    value,
+                },
+            ]),
+        ]),
+    };
+    return array;
+}
+
+function* arrayPrototypeJoin(ctx: Context, self: InterpreterObject | null, args: Value[]): Generator<unknown, Value> {
+    if (self == null) {
+        throw new Error("Array.prototype.join: this == null");
+    }
+    const length = toUint32(yield* toNumber(ctx, yield* getProperty(ctx, self, "length")));
+    const separator = args[0] === undefined ? "," : yield* toString(ctx, args[0]);
+    if (length === 0) {
+        return "";
+    }
+    let r = "";
+    const zero = yield* getProperty(ctx, self, "0");
+    if (zero != null) {
+        r = yield* toString(ctx, zero);
+    }
+    for (let k = 1; k !== length; k++) {
+        const result = yield* getProperty(ctx, self, String(k));
+        r += separator;
+        if (result != null) {
+            r += yield* toString(ctx, result);
+        }
+    }
+    return r;
+}
+
+function* arrayPrototypeToString(
+    ctx: Context,
+    self: InterpreterObject | null,
+    _args: Value[]
+): Generator<unknown, Value> {
+    return yield* arrayPrototypeJoin(ctx, self, []);
+}
+
+function* arrayPrototypeReverse(
+    ctx: Context,
+    self: InterpreterObject | null,
+    _args: Value[]
+): Generator<unknown, Value> {
+    if (self == null) {
+        throw new Error("Array.prototype.reverse: this == null");
+    }
+    const length = toUint32(yield* toNumber(ctx, yield* getProperty(ctx, self, "length")));
+    const mid = length >>> 1;
+    for (let k = 0; k !== mid; k++) {
+        const result6 = length - k - 1;
+        const result7 = String(k);
+        const result8 = String(result6);
+        const result9 = yield* getProperty(ctx, self, result7);
+        const result10 = yield* getProperty(ctx, self, result8);
+        const has8 = hasProperty(self, result8);
+        const has7 = hasProperty(self, result7);
+        if (has8) {
+            yield* putProperty(ctx, self, result7, result10);
+        } else {
+            deleteProperty(self, result7);
+        }
+        if (has7) {
+            yield* putProperty(ctx, self, result8, result9);
+        } else {
+            deleteProperty(self, result8);
+        }
+    }
+    return self;
+}
+
+// naive merge sort implementation
+function* mergeSort(
+    ctx: Context,
+    comparefn: NativeFunction | undefined,
+    source: InterpreterObject,
+    start: number,
+    end: number
+): Generator<unknown, void> {
+    const length = end - start;
+    if (length === 1) {
+        return;
+    }
+    const mid = start + (length >>> 1);
+    yield* mergeSort(ctx, comparefn, source, start, mid);
+    yield* mergeSort(ctx, comparefn, source, mid, end);
+    let i = start,
+        j = mid;
+    let hasA = hasProperty(source, String(i));
+    let hasB = hasProperty(source, String(j));
+    let a = yield* getProperty(ctx, source, String(i));
+    let b = yield* getProperty(ctx, source, String(j));
+    const work: Value[] = [];
+    while (i < mid && j < end && hasA && hasB) {
+        const compared = yield* arraySortCompare(ctx, a, b, comparefn);
+        if (compared <= 0) {
+            work.push(a);
+            i++;
+            if (i < mid) {
+                a = yield* getProperty(ctx, source, String(i));
+                hasA = hasProperty(source, String(i));
+            }
+        } else {
+            work.push(b);
+            j++;
+            if (j < end) {
+                b = yield* getProperty(ctx, source, String(j));
+                hasB = hasProperty(source, String(j));
+            }
+        }
+    }
+    while (i < mid && hasA) {
+        work.push(a);
+        i++;
+        if (i < mid) {
+            a = yield* getProperty(ctx, source, String(i));
+            hasA = hasProperty(source, String(i));
+        }
+    }
+    while (j < end && hasB) {
+        work.push(b);
+        j++;
+        if (j < end) {
+            b = yield* getProperty(ctx, source, String(j));
+            hasB = hasProperty(source, String(j));
+        }
+    }
+    let k = start;
+    for (const v of work) {
+        yield* putProperty(ctx, source, String(k), v);
+        k++;
+    }
+    for (; k < end; k++) {
+        deleteProperty(source, String(k));
+    }
+}
+
+function* arraySortCompare(ctx: Context, x: Value, y: Value, comparefn?: NativeFunction): Generator<unknown, number> {
+    if (x === undefined && y === undefined) {
+        return 0;
+    }
+    if (x === undefined) {
+        return 1;
+    }
+    if (y === undefined) {
+        return -1;
+    }
+    if (comparefn != null) {
+        return yield* toNumber(ctx, yield* comparefn(ctx, null, [x, y])); // FIXME: this
+    }
+    const result7 = yield* toString(ctx, x);
+    const result8 = yield* toString(ctx, y);
+    if (result7 < result8) {
+        return -1; // l
+    }
+    if (result7 > result8) {
+        return 1; // l
+    }
+    return 0;
+}
+
+function* arrayPrototypeSort(ctx: Context, self: InterpreterObject | null, args: Value[]): Generator<unknown, Value> {
+    if (self == null) {
+        throw new Error("Array.prototype.sort: this == null");
+    }
+    const comparefn = args[0];
+    const call = isObject(comparefn) ? comparefn.internalProperties.call : undefined;
+    if (comparefn !== undefined && call == null) {
+        throw new TypeError(`Array.prototype.sort: comparefn is not function: ${yield* toString(ctx, comparefn)}`);
+    }
+    const length = toUint32(yield* toNumber(ctx, yield* getProperty(ctx, self, "length")));
+    yield* mergeSort(ctx, call, self, 0, length);
+    return self;
 }
 
 function createIntrinsics(): Intrinsics {
@@ -3321,6 +3607,76 @@ function createIntrinsics(): Intrinsics {
         internal: false,
         value: booleanPrototype,
     });
+    const arrayPrototype: InterpreterObject = {
+        internalProperties: {
+            prototype: objectPrototype,
+            class: "Array",
+            value: undefined,
+            put: putArrayProperty,
+        },
+        properties: new Map([
+            [
+                "length",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: true,
+                    internal: false,
+                    value: 0,
+                },
+            ],
+        ]),
+    };
+    const array = newNativeFunction(
+        functionPrototype,
+        function* arrayConstruct(ctx, _self, args) {
+            return yield* arrayConstructor(ctx, args);
+        },
+        1
+    );
+    array.internalProperties.construct = arrayConstructor;
+    arrayPrototype.properties.set("constructor", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: array,
+    });
+    arrayPrototype.properties.set("toString", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(functionPrototype, arrayPrototypeToString, 0),
+    });
+    arrayPrototype.properties.set("join", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(functionPrototype, arrayPrototypeJoin, 1),
+    });
+    arrayPrototype.properties.set("reverse", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(functionPrototype, arrayPrototypeReverse, 0),
+    });
+    arrayPrototype.properties.set("sort", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(functionPrototype, arrayPrototypeSort, 1),
+    });
+    array.properties.set("prototype", {
+        readOnly: true,
+        dontEnum: true,
+        dontDelete: true,
+        internal: false,
+        value: arrayPrototype,
+    });
     const evalFunction = newNativeFunction(
         functionPrototype,
         // If value of the eval property is used in any way other than a direct call (that is, other than by the
@@ -3345,6 +3701,8 @@ function createIntrinsics(): Intrinsics {
         ObjectPrototype: objectPrototype,
         Function: functionObject,
         FunctionPrototype: functionPrototype,
+        Array: array,
+        ArrayPrototype: arrayPrototype,
         String: string,
         StringPrototype: stringPrototype,
         Boolean: boolean,
@@ -3410,6 +3768,16 @@ function createGlobal(intrinsics: Intrinsics): InterpreterObject {
                     dontDelete: false,
                     internal: false,
                     value: intrinsics.Function,
+                },
+            ],
+            [
+                "Array",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: intrinsics.Array,
                 },
             ],
             [

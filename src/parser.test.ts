@@ -52,6 +52,7 @@ test("tokenizer", () => {
     expect(error(() => filterByValue(tokenize("@")))).toBeTruthy();
     expect(error(() => filterByValue(tokenize("1e")))).toBeTruthy();
     expect(error(() => filterByValue(tokenize("1e+")))).toBeTruthy();
+    // expect(error(() => filterByValue(tokenize("'a\n'")))).toBeTruthy();
     expect(filterByValue(tokenize(".e+1"))).toStrictEqual([".", "e", "+", 1]);
     expect(filterByValue(tokenize("."))).toStrictEqual(["."]);
     expect(filterByValue(tokenize("1e+2"))).toStrictEqual([1e2]);
@@ -3545,6 +3546,615 @@ Number.prototype.hoge = 1;
         type: "normalCompletion",
         hasValue: true,
         value: undefined,
+    });
+    expect(
+        await runAsync(String.raw`
+        Array.prototype[4] = 1;
+        Array.prototype.length;
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 5,
+    });
+    expect(await runAsync(String.raw`new Array(1, 2, 3)[1]`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(await runAsync(String.raw`new Array("100")[0]`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "100",
+    });
+    expect(await runAsync(String.raw`new Array(new Number(100)).length`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    await expect(runAsync(String.raw`new Array(NaN)`)).rejects.toThrow();
+    expect(await runAsync(String.raw`new Array(100).length`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 100,
+    });
+    expect(
+        await runAsync(String.raw`
+        Array.prototype[0] = 1;
+        var a = new Array;
+        a[0]
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        Array.prototype[0] = 1;
+        var a = new Array;
+        a[1] = 2;
+        var r = "";
+        for (var b in a) {
+            r += b;
+        }
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "10",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a.length = 0;
+        a[0] + "," + a[1] + "," + a[2]
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "undefined,undefined,undefined",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a.length = 1;
+        a[0] + "," + a[1] + "," + a[2]
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,undefined,undefined",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a.length = 2;
+        a[0] + "," + a[1] + "," + a[2]
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,1,undefined",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a.length = 3;
+        a[0] + "," + a[1] + "," + a[2]
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,1,2",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a.length = 4;
+        a[0] + "," + a[1] + "," + a[2]
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,1,2",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a.length = 1.1;
+        a[0] + "," + a[1] + "," + a[2]
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,undefined,undefined", // newer ES does not allow non-integer length
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        delete a[2];
+        a.length
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 3,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a.join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,1,2",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a.join("#")
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0#1#2",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a.join(null)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0null1null2",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a.join(Object.undef)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,1,2",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a[0.1] = 999;
+        a.join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,1,2",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a[-0] = 999;
+        a.join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "999,1,2",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(1);
+        a[-0] = 999;
+        a.join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "999",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(1);
+        a[-0] = 999;
+        a.join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "999",
+    });
+    expect(
+        await runAsync(String.raw`
+        a = new Array(1);
+        a[0xffffffff] = 1;
+        a.length`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        a = new Array(1);
+        a[0xfffffffe] = 1;
+        a.length`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0xffffffff,
+    });
+    expect(
+        await runAsync(String.raw`
+        a = new Array(1);
+        a.length = 0xffffffff;
+        a.length`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0xffffffff,
+    });
+    await expect(
+        runAsync(String.raw`
+        a = new Array(1);
+        a.length = 0x100000000;
+        a.length`)
+    ).rejects.toThrow();
+    expect(
+        await runAsync(String.raw`
+        a = new Array(1);
+        a[0x100000000] = 1;
+        a.length = 0;
+        a[0x100000000]`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        v = new Object;
+        function valueOf() { return 1; }
+        v.valueOf = valueOf;
+        a = new Array(0);
+        a.length = v;
+        a.length`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        a = new Array(1);
+        a[0] = 1;
+        a[0xfffffffe] = 1;
+        a[0xfffffffc] = 1;
+        a.length = 1;
+        a[0]`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(0, 1, 2);
+        a.toString()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,1,2",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = Array.prototype.constructor(0, 1, 2);
+        a.toString()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,1,2",
+    });
+    expect(
+        await runAsync(String.raw`
+        function f(a,b){}
+        f.join = Array.prototype.join;
+        f.join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: ",",
+    });
+    expect(
+        await runAsync(String.raw`
+        var join = Array.prototype.join;
+        join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "", //
+    });
+    await expect(
+        runAsync(String.raw`
+        function f() {
+            var join = Array.prototype.join;
+            join();
+        }
+        f();
+    `)
+    ).rejects.toThrow();
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(1, 2, 3);
+        a.reverse().join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "3,2,1",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(1, 2);
+        a.reverse().join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "2,1",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(1);
+        a[0] = 1;
+        a.reverse().join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array();
+        a.reverse().join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(1, 2);
+        a.reverse() == a
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Object;
+        a[0] = 1;
+        a.length = 2;
+        a.reverse = Array.prototype.reverse;
+        a.reverse();
+        a[1]
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Object;
+        a[0] = 1;
+        a.length = 2;
+        a.reverse = Array.prototype.reverse;
+        a.reverse();
+        var count = 0;
+        for (var i in a) if (i != "length" && i != "reverse") count++;
+        count
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a, a) {}
+        Function.prototype[1] = 1;
+        Function.prototype.reverse = Array.prototype.reverse;
+        a.reverse();
+        a[0];
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        new Array(4, 3, 2).sort().join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "2,3,4",
+    });
+    expect(
+        await runAsync(String.raw`
+        new Array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11).sort().join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,1,10,11,2,3,4,5,6,7,8,9",
+    });
+    expect(
+        await runAsync(String.raw`
+        function compare(a, b) { return a - b; }
+        new Array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11).sort(compare).join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,1,2,3,4,5,6,7,8,9,10,11",
+    });
+    expect(
+        await runAsync(String.raw`
+        function compare(a, b) { return b - a; }
+        new Array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11).sort(compare).join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "11,10,9,8,7,6,5,4,3,2,1,0",
+    });
+    expect(
+        await runAsync(String.raw`
+        var o = new Object;
+        o[1] = 0;
+        o.length = 2;
+        o.sort = Array.prototype.sort;
+        o.sort();
+        o[0]
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(
+        await runAsync(String.raw`
+        var o = new Object;
+        o[1] = 0;
+        o.length = 2;
+        o.sort = Array.prototype.sort;
+        o.sort();
+        var success = true;
+        for (var i in o) { if (i == "1") success = false; }
+        success;
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array;
+        a.length = 100;
+        a[100] = 0;
+        a[0] = 1;
+        function compare(a, b) { return a - b; }
+        a.sort(compare);
+        a.length = 2;
+        a.join();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0,1",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array;
+        a.length = 100;
+        a[100] = 0;
+        a[0] = 1;
+        function compare(a, b) { return a - b; }
+        a.sort(compare);
+        count = 0;
+        for (var i in a) count++;
+        count;
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array;
+        a.length = 100;
+        a[0] = 1;
+        a[1] = 2;
+        a[100] = 100;
+        a[99] = 99;
+        function compare(a, b) { return a - b; }
+        a.sort(compare);
+        a.length = 4;
+        a.join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1,2,99,100",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array;
+        a.length = 100;
+        a[0] = 16;
+        a[4] = 4;
+        a[8] = 64;
+        a[16] = 32;
+        a[32] = 0;
+        a[64] = 8;
+        function compare(a, b) { return b - a; }
+        a.sort(compare);
+        a.length = 6;
+        a.join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "64,32,16,8,4,0",
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array;
+        a.toString = Object.prototype.toString;
+        a.toString()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "[object Array]",
+    });
+    expect(
+        await runAsync(String.raw`
+        Array.prototype[1] = 1;
+        a = new Array(2);
+        a[0] = 2;
+        a.sort().join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1,2",
+    });
+    expect(
+        await runAsync(String.raw`
+        Array.prototype[1] = 1;
+        a = new Array(2);
+        a[0] = 2;
+        Array.prototype.join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: ",1",
     });
     expect(
         await runAsync(String.raw`
