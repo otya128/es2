@@ -4350,6 +4350,21 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 1,
     });
+    expect(await runAsync(String.raw`delete Math.E`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(await runAsync(String.raw`delete Math.sin`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`Math.max(0, 1)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
     expect(
         await runAsync(String.raw`
         sleep(1);

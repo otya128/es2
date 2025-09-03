@@ -3856,6 +3856,79 @@ function createIntrinsics(): Intrinsics {
         },
         1
     );
+    const math = newObject(objectPrototype);
+    math.internalProperties.class = "Math";
+    for (const a of ["E", "LN10", "LN2", "LOG2E", "LOG10E", "PI", "SQRT1_2", "SQRT2"] as const) {
+        math.properties.set(a, {
+            readOnly: true,
+            dontEnum: true,
+            dontDelete: true,
+            internal: false,
+            value: Math[a],
+        });
+    }
+    for (const a of ["random"] as const) {
+        math.properties.set(a, {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: newNativeFunction(
+                functionPrototype,
+                function* mathWrapper(ctx, _self, args) {
+                    return Math[a]();
+                },
+                0
+            ),
+        });
+    }
+    for (const a of [
+        "abs",
+        "acos",
+        "asin",
+        "atan",
+        "ceil",
+        "cos",
+        "exp",
+        "floor",
+        "log",
+        "round",
+        "sin",
+        "sqrt",
+        "tan",
+    ] as const) {
+        math.properties.set(a, {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: newNativeFunction(
+                functionPrototype,
+                function* mathWrapper(ctx, _self, args) {
+                    const a0 = yield* toNumber(ctx, args[0]);
+                    return Math[a](a0);
+                },
+                1
+            ),
+        });
+    }
+    for (const a of ["atan2", "max", "min", "pow"] as const) {
+        math.properties.set(a, {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: newNativeFunction(
+                functionPrototype,
+                function* mathWrapper(ctx, _self, args) {
+                    const a0 = yield* toNumber(ctx, args[0]);
+                    const a1 = yield* toNumber(ctx, args[1]);
+                    return Math[a](a0, a1);
+                },
+                2
+            ),
+        });
+    }
     return {
         eval: evalFunction,
         Object: object,
@@ -3870,6 +3943,7 @@ function createIntrinsics(): Intrinsics {
         BooleanPrototype: booleanPrototype,
         Number: number,
         NumberPrototype: numberPrototype,
+        Math: math,
     } as Intrinsics;
 }
 
@@ -3969,6 +4043,16 @@ function createGlobal(intrinsics: Intrinsics): InterpreterObject {
                     dontDelete: false,
                     internal: false,
                     value: intrinsics.Number,
+                },
+            ],
+            [
+                "Math",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: false,
+                    internal: false,
+                    value: intrinsics.Math,
                 },
             ],
         ]),
