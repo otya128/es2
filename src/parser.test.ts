@@ -1040,6 +1040,10 @@ a /= 2;
             },
         ],
     } as Program);
+    expect(omitPosition(parse(String.raw``))).toStrictEqual({
+        type: "program",
+        sourceElements: [] as SourceElement[],
+    } as Program);
     expect(
         parse(String.raw`anc/=2;function func(a, b){
 anc /= 2;
@@ -1199,6 +1203,31 @@ test("interpreter", async () => {
         hasValue: true,
         value: "",
     });
+    expect(await runAsync("String(Object.undef)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "undefined",
+    });
+    expect(await runAsync("String(null)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "null",
+    });
+    expect(await runAsync("String(true)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "true",
+    });
+    expect(await runAsync("String(false)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "false",
+    });
+    expect(await runAsync("Number(Object.undef)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
     expect(await runAsync("Number(11)")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
@@ -1297,6 +1326,16 @@ test("interpreter", async () => {
         type: "normalCompletion",
         hasValue: true,
         value: 0,
+    });
+    expect(await runAsync("new Boolean(1).valueOf()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync("new Boolean().valueOf()")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
     });
     expect(await runAsync("'1'.toString()")).toStrictEqual({
         type: "normalCompletion",
@@ -2217,6 +2256,16 @@ Number.prototype.hoge = 1;
     });
     expect(
         await runAsync(String.raw`
+            Object.prototype.a = 2;
+            o = new Object(); o.B = 1; for (var B in o) { B }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "a",
+    });
+    expect(
+        await runAsync(String.raw`
             o = new Object(); o.a = 1; for (var a in o) { break; }
         `)
     ).toStrictEqual({
@@ -2838,6 +2887,58 @@ Number.prototype.hoge = 1;
     });
     expect(
         await runAsync(String.raw`
+        function A() {
+            this.hoge = 1;
+        }
+        function AToString() {
+            return "A: hoge=" + this.hoge;
+        }
+        A.prototype.toString = AToString;
+        var a = new A();
+        String(a)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "A: hoge=1",
+    });
+    expect(
+        await runAsync(String.raw`
+        function A() {
+            this.hoge = 1;
+        }
+        function AToValueOf() {
+            return this.hoge;
+        }
+        A.prototype.valueOf = AToValueOf;
+        var a = new A();
+        a.hoge = 2;
+        a * 10
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 20,
+    });
+    expect(
+        await runAsync(String.raw`
+        function A() {
+            this.hoge = 1;
+        }
+        function AToValueOf() {
+            return this.hoge;
+        }
+        A.prototype.valueOf = AToValueOf;
+        var a = new A();
+        a + ""
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1",
+    });
+    expect(
+        await runAsync(String.raw`
         function hoge() { return 1; }
         hoge.prototype.constructor();
     `)
@@ -2866,6 +2967,26 @@ Number.prototype.hoge = 1;
         type: "normalCompletion",
         hasValue: true,
         value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge() { while (hoge) return 1; return 0; }
+        hoge();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function hoge() { return 0; while (hoge) return 1; }
+        hoge();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
     });
     expect(
         await runAsync(String.raw`
@@ -2905,5 +3026,424 @@ Number.prototype.hoge = 1;
         type: "normalCompletion",
         hasValue: true,
         value: undefined,
+    });
+    expect(
+        await runAsync(String.raw`
+        Function("return 1")()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        Function.length
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        Function()()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
+    });
+    expect(
+        await runAsync(String.raw`
+        Function("")()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
+    });
+    expect(
+        await runAsync(String.raw`
+        Function("a", "return a")(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        Function("a", "b", "return a+b")(1, 2)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 3,
+    });
+    expect(
+        await runAsync(String.raw`
+        Function("a,b", "c", "return a + b + c")(1, 2, 3)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 6,
+    });
+    expect(
+        await runAsync(String.raw`
+        Function("a,\nb  ", "c", "return a + b + c")(1, 2, 3)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 6,
+    });
+    expect(
+        await runAsync(String.raw`
+        Function("return 1")()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        new Function("return 1")()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        new Function("return 1").toString()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "Function", // FIXME
+    });
+    expect(
+        await runAsync(String.raw`
+        Function.prototype.constructor("return 1")()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        var b = 2;
+        function a() {
+            var b = 1;
+            return new Function("return b");
+        }
+        a()();
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(
+        await runAsync(String.raw`
+        s = new Object;
+        s.a = 1;
+        with (s) {
+            new Function("a = 123")();
+        }
+        s.a
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() { this.func = new Function("return this"); }
+        var i = new a();
+        i.func() == i;
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        var o = new Object;
+        o.abc = 123;
+        function func() { return this.abc; }
+        o.func = func;
+        with (o) {
+            func();
+        }
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 123,
+    });
+    expect(
+        await runAsync(String.raw`
+        var g = 123
+        function b() { return this.g; }
+        function a() { var f = b; var g = 'unused'; return f(); }
+        a()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 123,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() { return arguments.callee == a; }
+        a()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() { return arguments.length; }
+        a()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() { return arguments.length; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { arguments[0] = 123; return a1; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 123,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { a1 = 123; return arguments[0]; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 123,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { var o = new Object; o[0] = 1; for (var i in o) return i;  return "?" }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "0",
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { for (var i in arguments) return i; return "DontEnum"; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "DontEnum",
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1, a1) { return arguments[0]; }
+        a(1, 2)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() { var v = 1; return delete v; }
+        a()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() { var v = 1; delete v; return v; }
+        a()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() { var o = new Object; o.p = 1; with (o) return delete p; }
+        a()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() { var p = 0; var o = new Object; o.p = 1; with (o) { delete p; return p; } }
+        a()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    await expect(
+        runAsync(String.raw`
+        function a() { var o = new Object; o.p = 1; with (o) { delete p; return p; } }
+        a()
+    `)
+    ).rejects.toThrow();
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { return delete a1; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { delete a1; return a1; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { arguments.length = 0; return arguments.length; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { arguments.length = 0; return arguments[0]; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { return delete arguments.length; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { return delete arguments[0]; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { delete arguments[0]; return arguments[0]; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1) { delete arguments[0]; return a1; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() { return arguments[0]; }
+        a(1, 2)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() { var r = ""; for (var i in arguments) r += arguments[i]; return r; }
+        a(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "", // DontEnum
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(arguments) { return arguments; }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        sleep(1);
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "slept",
     });
 });

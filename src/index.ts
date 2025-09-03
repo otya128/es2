@@ -1266,12 +1266,31 @@ class Tokenizer {
     }
 }
 
-export function parse(source: string) {
+export function parse(source: string): Program {
     const tokenizer = new Tokenizer(source);
     return parseProgram(tokenizer);
 }
 
-export function parseProgram(tokenizer: Tokenizer): Program {
+export function parseStatementList(source: string): Block {
+    const tokenizer = new Tokenizer(source);
+    const begin = tokenizer.current;
+    const statementList: Statement[] = [];
+    while (true) {
+        const end = tokenizer.current;
+        if (end.type === "end") {
+            break;
+        }
+        statementList.push(parseStatement(tokenizer));
+    }
+    return {
+        type: "block",
+        statementList,
+        start: begin.start,
+        end: tokenizer.prevPosition,
+    };
+}
+
+function parseProgram(tokenizer: Tokenizer): Program {
     const begin = tokenizer.current;
     const sourceElements: SourceElement[] = [];
     while (tokenizer.current.type !== "end") {
@@ -1294,6 +1313,24 @@ function parseSourceElement(tokenizer: Tokenizer): SourceElement {
     }
 }
 
+function parseFormalParameterList(tokenizer: Tokenizer): string[] {
+    const parameters: string[] = [];
+    while (true) {
+        const parameterOrEnd = tokenizer.current;
+        if (parameterOrEnd.type !== "identifier") {
+            break;
+        }
+        parameters.push(parameterOrEnd.value);
+        const commaOrEnd = tokenizer.next();
+        if (commaOrEnd.type === "punctuator" && commaOrEnd.value === ",") {
+            tokenizer.next();
+            continue;
+        }
+        break;
+    }
+    return parameters;
+}
+
 function parseFunctionDeclaration(tokenizer: Tokenizer): FunctionDeclaration {
     const token = tokenizer.current;
     if (token.type !== "keyword" || token.value !== "function") {
@@ -1307,24 +1344,11 @@ function parseFunctionDeclaration(tokenizer: Tokenizer): FunctionDeclaration {
     if (p.type !== "punctuator" || p.value !== "(") {
         throw new UnexpectedTokenError("FunctionDeclaration", "(", p);
     }
-    const parameters: string[] = [];
-    while (true) {
-        const parameterOrEnd = tokenizer.next();
-        if (parameterOrEnd.type === "punctuator" && parameterOrEnd.value === ")") {
-            break;
-        }
-        if (parameterOrEnd.type !== "identifier") {
-            throw new UnexpectedTokenError("FormalParameterList", ") or identifier", parameterOrEnd);
-        }
-        parameters.push(parameterOrEnd.value);
-        const commaOrEnd = tokenizer.next();
-        if (commaOrEnd.type === "punctuator" && commaOrEnd.value === ")") {
-            break;
-        }
-        if (commaOrEnd.type === "punctuator" && commaOrEnd.value === ",") {
-            continue;
-        }
-        throw new UnexpectedTokenError("FormalParameterList", ", or )", commaOrEnd);
+    tokenizer.next();
+    const parameters: string[] = parseFormalParameterList(tokenizer);
+    const end = tokenizer.current;
+    if (end.type !== "punctuator" || end.value !== ")") {
+        throw new UnexpectedTokenError("FormalParameterList", ")", end);
     }
     tokenizer.next();
     return {
@@ -2497,6 +2521,7 @@ type AbruptCompletion =
 type Reference = {
     baseObject: InterpreterObject | null;
     name: string;
+    activation: boolean;
 };
 type RefOrValue = null | undefined | number | boolean | string | Value | Reference;
 
@@ -2559,15 +2584,7 @@ function canPutProperty(ctx: Context, self: InterpreterObject, propertyName: str
     return canPutProperty(ctx, prototype, propertyName);
 }
 
-function* putProperty(
-    ctx: Context,
-    self: InterpreterObject,
-    propertyName: string,
-    value: Value
-): Generator<unknown, unknown> {
-    if (self.internalProperties.put) {
-        return yield* self.internalProperties.put(ctx, self, propertyName, value);
-    }
+function defaultPutProperty(ctx: Context, self: InterpreterObject, propertyName: string, value: Value) {
     if (!canPutProperty(ctx, self, propertyName)) {
         return;
     }
@@ -2583,6 +2600,17 @@ function* putProperty(
             value,
         });
     }
+}
+function* putProperty(
+    ctx: Context,
+    self: InterpreterObject,
+    propertyName: string,
+    value: Value
+): Generator<unknown, unknown> {
+    if (self.internalProperties.put) {
+        return yield* self.internalProperties.put(ctx, self, propertyName, value);
+    }
+    defaultPutProperty(ctx, self, propertyName, value);
     return;
 }
 
@@ -2622,12 +2650,9 @@ function isObject(value: Value): value is InterpreterObject {
     return !isPrimitive(value);
 }
 
-function isActivationObject(_: Value): boolean {
-    return false;
-}
-
 type Scope = {
     parent: Scope | undefined;
+    activation: boolean;
     object: InterpreterObject;
 };
 
@@ -2665,6 +2690,7 @@ type Intrinsics = {
 type Realm = {
     intrinsics: Intrinsics;
     globalObject: InterpreterObject;
+    globalScope: Scope;
 };
 
 function newObject(prototype: InterpreterObject): InterpreterObject {
@@ -2745,7 +2771,7 @@ function newBooleanObject(prototype: InterpreterObject, value: boolean): Interpr
     };
 }
 
-function createFunction(prototype: InterpreterObject, func: NativeFunction, length: number): InterpreterObject {
+function newNativeFunction(prototype: InterpreterObject, func: NativeFunction, length: number): InterpreterObject {
     return {
         internalProperties: {
             prototype,
@@ -2768,10 +2794,13 @@ function createFunction(prototype: InterpreterObject, func: NativeFunction, leng
     };
 }
 
-function* getProperty(value: InterpreterObject, name: string): Generator<unknown, Value> {
+function* getProperty(ctx: Context, value: InterpreterObject, name: string): Generator<unknown, Value> {
     let o: InterpreterObject | null = value;
     while (o != null) {
         if (o.properties.has(name)) {
+            if (o.internalProperties.get != null) {
+                return yield* o.internalProperties.get(ctx, value, name);
+            }
             return o.properties.get(name)?.value;
         }
         o = o.internalProperties.prototype;
@@ -2822,14 +2851,14 @@ function* defaultValue(
 ): Generator<unknown, PrimitiveValue> {
     // FIXME: Date
     if (hint === "string") {
-        const toString = yield* getProperty(value, "toString");
+        const toString = yield* getProperty(ctx, value, "toString");
         if (isObject(toString)) {
             const result = yield* callObject(ctx, toString, value, []);
             if (isPrimitive(result)) {
                 return result;
             }
         }
-        const valueOf = yield* getProperty(value, "valueOf");
+        const valueOf = yield* getProperty(ctx, value, "valueOf");
         if (isObject(valueOf)) {
             const result = yield* callObject(ctx, valueOf, value, []);
             if (isPrimitive(result)) {
@@ -2837,14 +2866,14 @@ function* defaultValue(
             }
         }
     } else {
-        const valueOf = yield* getProperty(value, "valueOf");
+        const valueOf = yield* getProperty(ctx, value, "valueOf");
         if (isObject(valueOf)) {
             const result = yield* callObject(ctx, valueOf, value, []);
             if (isPrimitive(result)) {
                 return result;
             }
         }
-        const toString = yield* getProperty(value, "toString");
+        const toString = yield* getProperty(ctx, value, "toString");
         if (isObject(toString)) {
             const result = yield* callObject(ctx, toString, value, []);
             if (isPrimitive(result)) {
@@ -2923,6 +2952,26 @@ function toBoolean(value: Value): boolean {
     return true;
 }
 
+function* constructFunction(ctx: Context, args: Value[]): Generator<unknown, InterpreterObject> {
+    let body = "";
+    let argsStrings = [];
+    for (let k = 0; k < args.length; k++) {
+        const s = yield* toString(ctx, args[k]);
+        if (k < args.length - 1) {
+            argsStrings.push(s);
+        } else {
+            body = s;
+        }
+    }
+    const tokenizer = new Tokenizer(argsStrings.join(","));
+    const parameters = parseFormalParameterList(tokenizer);
+    if (tokenizer.current.type !== "end") {
+        throw new Error("Function: illegal arguments: " + argsStrings.join(","));
+    }
+    const block = parseStatementList(body);
+    return yield* newFunction(ctx, parameters, block);
+}
+
 function createIntrinsics(): Intrinsics {
     const objectPrototype: InterpreterObject = {
         internalProperties: {
@@ -2950,26 +2999,6 @@ function createIntrinsics(): Intrinsics {
                     dontDelete: true,
                     internal: false,
                     value: 0,
-                },
-            ],
-            [
-                "constructor",
-                {
-                    readOnly: false,
-                    dontEnum: true,
-                    dontDelete: false,
-                    internal: false,
-                    value: null,
-                },
-            ],
-            [
-                "toString",
-                {
-                    readOnly: false,
-                    dontEnum: true,
-                    dontDelete: false,
-                    internal: false,
-                    value: null,
                 },
             ],
         ]),
@@ -3026,8 +3055,10 @@ function createIntrinsics(): Intrinsics {
             prototype: functionPrototype,
             class: "Function",
             value: undefined,
-            // call
-            // construct
+            *call(ctx, _self, args) {
+                return yield* constructFunction(ctx, args);
+            },
+            construct: constructFunction,
         },
         properties: new Map([
             [
@@ -3052,6 +3083,31 @@ function createIntrinsics(): Intrinsics {
             ],
         ]),
     };
+    functionPrototype.properties.set("constructor", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: functionObject,
+    });
+    functionPrototype.properties.set("toString", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* functionToString(_ctx, self, _args) {
+                // FIXME: improve function detection
+                if (self?.internalProperties.call == null) {
+                    throw new TypeError("this must be Function");
+                }
+                // FIXME
+                return "Function";
+            },
+            1
+        ),
+    });
     objectPrototype.properties.set("constructor", {
         readOnly: false,
         dontEnum: true,
@@ -3064,7 +3120,7 @@ function createIntrinsics(): Intrinsics {
         dontEnum: true,
         dontDelete: false,
         internal: false,
-        value: createFunction(
+        value: newNativeFunction(
             functionPrototype,
             function* objectToString(_ctx, self, _args) {
                 // newer ES:
@@ -3078,7 +3134,7 @@ function createIntrinsics(): Intrinsics {
             1
         ),
     });
-    const string = createFunction(
+    const string = newNativeFunction(
         functionPrototype,
         function* string(ctx, _, args) {
             if (args.length === 0) {
@@ -3105,7 +3161,7 @@ function createIntrinsics(): Intrinsics {
         dontEnum: true,
         dontDelete: false,
         internal: false,
-        value: createFunction(
+        value: newNativeFunction(
             functionPrototype,
             function* stringToString(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "string") {
@@ -3121,7 +3177,7 @@ function createIntrinsics(): Intrinsics {
         dontEnum: true,
         dontDelete: false,
         internal: false,
-        value: createFunction(
+        value: newNativeFunction(
             functionPrototype,
             function* stringValueOf(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "string") {
@@ -3139,7 +3195,7 @@ function createIntrinsics(): Intrinsics {
         internal: false,
         value: stringPrototype,
     });
-    const number = createFunction(
+    const number = newNativeFunction(
         functionPrototype,
         function* Number(ctx, _, args) {
             if (args.length === 0) {
@@ -3166,7 +3222,7 @@ function createIntrinsics(): Intrinsics {
         dontEnum: true,
         dontDelete: false,
         internal: false,
-        value: createFunction(
+        value: newNativeFunction(
             functionPrototype,
             function* numberToString(ctx, self, args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "number") {
@@ -3185,7 +3241,7 @@ function createIntrinsics(): Intrinsics {
         dontEnum: true,
         dontDelete: false,
         internal: false,
-        value: createFunction(
+        value: newNativeFunction(
             functionPrototype,
             function* numberValueOf(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "number") {
@@ -3203,7 +3259,7 @@ function createIntrinsics(): Intrinsics {
         internal: false,
         value: numberPrototype,
     });
-    const boolean = createFunction(
+    const boolean = newNativeFunction(
         functionPrototype,
         function* Boolean(ctx, _, args) {
             if (args.length === 0) {
@@ -3230,7 +3286,7 @@ function createIntrinsics(): Intrinsics {
         dontEnum: true,
         dontDelete: false,
         internal: false,
-        value: createFunction(
+        value: newNativeFunction(
             functionPrototype,
             function* booleanToString(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "boolean") {
@@ -3247,7 +3303,7 @@ function createIntrinsics(): Intrinsics {
         dontEnum: true,
         dontDelete: false,
         internal: false,
-        value: createFunction(
+        value: newNativeFunction(
             functionPrototype,
             function* booleanValueOf(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "boolean") {
@@ -3357,20 +3413,6 @@ function createGlobal(intrinsics: Intrinsics): InterpreterObject {
                     value: intrinsics.Number,
                 },
             ],
-            /*[
-                "sleep",
-                {
-                    readOnly: false,
-                    dontEnum: true,
-                    dontDelete: false,
-                    internal: false,
-                    value: this.createFunction(function* sleep() {
-                        return yield new Promise((resolve) => {
-                            setTimeout(() => resolve("hello"), 1000);
-                        });
-                    }, 0),
-                },
-            ],*/
         ]),
     };
 }
@@ -3385,6 +3427,9 @@ function* runBlock(ctx: Context, block: Block): Generator<unknown, Completion> {
             break;
         }
         const completion3 = yield* runStatement(ctx, statement);
+        if (completion3.type === "returnCompletion") {
+            return completion3;
+        }
         if (completion3.hasValue || !completion1.hasValue) {
             completion1 = completion3;
             continue;
@@ -3416,14 +3461,14 @@ function* runBlock(ctx: Context, block: Block): Generator<unknown, Completion> {
     return completion1;
 }
 
-function* referenceGetValue(reference: RefOrValue): Generator<unknown, Value> {
+function* referenceGetValue(ctx: Context, reference: RefOrValue): Generator<unknown, Value> {
     if (!isReference(reference)) {
         return reference;
     }
     if (reference.baseObject == null) {
         throw new ReferenceError(`${reference.name}`);
     }
-    return yield* getProperty(reference.baseObject, reference.name);
+    return yield* getProperty(ctx, reference.baseObject, reference.name);
 }
 
 function* referencePutValue(ctx: Context, reference: RefOrValue, value: Value): Generator<unknown, unknown> {
@@ -3448,6 +3493,7 @@ function resolveIdentifier(scope: Scope, name: string): RefOrValue {
             return {
                 baseObject: s.object,
                 name,
+                activation: s.activation,
             };
         }
         s = s.parent;
@@ -3455,13 +3501,14 @@ function resolveIdentifier(scope: Scope, name: string): RefOrValue {
     return {
         baseObject: null,
         name,
+        activation: false,
     };
 }
 
 function* evaluateList(ctx: Context, list: Expression[]): Generator<unknown, Value[]> {
     const result: Value[] = [];
     for (const e of list) {
-        result.push(yield* referenceGetValue(yield* evaluateExpression(ctx, e)));
+        result.push(yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, e)));
     }
     return result;
 }
@@ -3623,22 +3670,24 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
         case "groupingOperator":
             return yield* evaluateExpression(ctx, expression.expression);
         case "memberOperator": {
-            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const left = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
             if ("name" in expression) {
                 return {
                     baseObject: toObject(ctx.realm.intrinsics, left),
                     name: expression.name,
+                    activation: false,
                 };
             } else {
-                const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+                const right = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
                 return {
                     baseObject: toObject(ctx.realm.intrinsics, left),
                     name: yield* toString(ctx, right),
+                    activation: false,
                 };
             }
         }
         case "newOperator": {
-            const value = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
+            const value = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.expression));
             let args: Value[] = [];
             if (expression.argumentList != null) {
                 args = yield* evaluateList(ctx, expression.argumentList);
@@ -3659,7 +3708,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
         case "callOperator": {
             const valueRef = yield* evaluateExpression(ctx, expression.expression);
             const args = yield* evaluateList(ctx, expression.argumentList);
-            const value = yield* referenceGetValue(valueRef);
+            const value = yield* referenceGetValue(ctx, valueRef);
             if (!isObject(value)) {
                 throw new TypeError("not Object");
             }
@@ -3667,15 +3716,12 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             if (call == null) {
                 throw new TypeError("not callable");
             }
-            let self = isReference(valueRef) ? valueRef.baseObject : null;
-            if (isActivationObject(self)) {
-                self = null;
-            }
+            let self = isReference(valueRef) && !valueRef.activation ? valueRef.baseObject : null;
             return yield* call(ctx, self, args);
         }
         case "postfixIncrementOperator": {
             const ref = yield* evaluateExpression(ctx, expression.expression);
-            const value = yield* referenceGetValue(ref);
+            const value = yield* referenceGetValue(ctx, ref);
             const number = yield* toNumber(ctx, value);
             const computed = number + 1;
             yield* referencePutValue(ctx, ref, computed);
@@ -3683,7 +3729,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
         }
         case "postfixDecrementOperator": {
             const ref = yield* evaluateExpression(ctx, expression.expression);
-            const value = yield* referenceGetValue(ref);
+            const value = yield* referenceGetValue(ctx, ref);
             const number = yield* toNumber(ctx, value);
             const computed = number - 1;
             yield* referencePutValue(ctx, ref, computed);
@@ -3702,7 +3748,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             // If Result(2) does not implement the internal [[Delete]] method, go to step 8 <= ?
         }
         case "voidOperator": {
-            yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
+            yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.expression));
             return undefined;
         }
         case "typeofOperator": {
@@ -3712,7 +3758,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                     return "undefined";
                 }
             }
-            const value = yield* referenceGetValue(ref);
+            const value = yield* referenceGetValue(ctx, ref);
             const t = getType(value);
             if (t === "null") {
                 return "object";
@@ -3721,7 +3767,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
         }
         case "prefixIncrementOperator": {
             const ref = yield* evaluateExpression(ctx, expression.expression);
-            const value = yield* referenceGetValue(ref);
+            const value = yield* referenceGetValue(ctx, ref);
             const number = yield* toNumber(ctx, value);
             const computed = number + 1;
             yield* referencePutValue(ctx, ref, computed);
@@ -3729,14 +3775,14 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
         }
         case "prefixDecrementOperator": {
             const ref = yield* evaluateExpression(ctx, expression.expression);
-            const value = yield* referenceGetValue(ref);
+            const value = yield* referenceGetValue(ctx, ref);
             const number = yield* toNumber(ctx, value);
             const computed = number - 1;
             yield* referencePutValue(ctx, ref, computed);
             return computed;
         }
         case "unaryPlusOperator": {
-            const value = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
+            const value = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.expression));
             const number = yield* toNumber(ctx, value);
             if (isNaN(number)) {
                 return NaN;
@@ -3744,7 +3790,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             return number;
         }
         case "unaryMinusOperator": {
-            const value = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
+            const value = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.expression));
             const number = yield* toNumber(ctx, value);
             if (isNaN(number)) {
                 return NaN;
@@ -3752,55 +3798,55 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             return -number;
         }
         case "bitwiseNotOperator": {
-            const value = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression));
+            const value = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.expression));
             const number = yield* toInt32(ctx, value);
             return ~number; // l
         }
         case "logicalNotOperator":
-            return !toBoolean(yield* referenceGetValue(yield* evaluateExpression(ctx, expression.expression)));
+            return !toBoolean(yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.expression)));
         case "multiplyOperator": {
-            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const left = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* multiply(ctx, left, right);
         }
         case "divideOperator": {
-            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const left = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* divide(ctx, left, right);
         }
         case "moduloOperator": {
-            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const left = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* modulo(ctx, left, right);
         }
         case "addOperator": {
-            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const left = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* add(ctx, left, right);
         }
         case "subtractOperator": {
-            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const left = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* subtract(ctx, left, right);
         }
         case "leftShiftOperator": {
-            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const left = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* leftShift(ctx, left, right);
         }
         case "signedRightShiftOperator": {
-            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const left = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* signedRightShift(ctx, left, right);
         }
         case "unsignedRightShiftOperator": {
-            const left = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const right = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const left = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const right = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* unsignedRightShift(ctx, left, right);
         }
         case "lessThanOperator": {
-            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const leftValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             const result = yield* compareValue(ctx, leftValue, rightValue);
             if (result === undefined) {
                 return false;
@@ -3809,8 +3855,8 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             }
         }
         case "greaterThanOperator": {
-            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const leftValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             const result = yield* compareValue(ctx, rightValue, leftValue);
             if (result === undefined) {
                 return false;
@@ -3819,8 +3865,8 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             }
         }
         case "lessThanOrEqualOperator": {
-            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const leftValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             const result = yield* compareValue(ctx, rightValue, leftValue);
             if (result === undefined || result) {
                 return false;
@@ -3829,8 +3875,8 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             }
         }
         case "greaterThanOrEqualOperator": {
-            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const leftValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             const result = yield* compareValue(ctx, leftValue, rightValue);
             if (result === undefined || result) {
                 return false;
@@ -3839,50 +3885,53 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             }
         }
         case "equalsOperator": {
-            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const leftValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* equalsValue(ctx, rightValue, leftValue);
         }
         case "doesNotEqualsOperator": {
-            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const leftValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return !(yield* equalsValue(ctx, rightValue, leftValue));
         }
         case "bitwiseAndOperator": {
-            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const leftValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* bitwiseAnd(ctx, rightValue, leftValue);
         }
         case "bitwiseXorOperator": {
-            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const leftValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* bitwiseXor(ctx, rightValue, leftValue);
         }
         case "bitwiseOrOperator": {
-            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            const rightValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            const leftValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const rightValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
             return yield* bitwiseOr(ctx, rightValue, leftValue);
         }
         case "logicalAndOperator": {
-            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const leftValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
             if (!toBoolean(leftValue)) {
                 return leftValue;
             }
-            return yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
         }
         case "logicalOrOperator": {
-            const leftValue = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
+            const leftValue = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
             if (toBoolean(leftValue)) {
                 return leftValue;
             }
-            return yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            return yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
         }
         case "conditionalOperator": {
-            const condition = yield* referenceGetValue(yield* evaluateExpression(ctx, expression.conditionExpression));
+            const condition = yield* referenceGetValue(
+                ctx,
+                yield* evaluateExpression(ctx, expression.conditionExpression)
+            );
             if (toBoolean(condition)) {
-                return yield* referenceGetValue(yield* evaluateExpression(ctx, expression.thenExpression));
+                return yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.thenExpression));
             } else {
-                return yield* referenceGetValue(yield* evaluateExpression(ctx, expression.elseExpression));
+                return yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.elseExpression));
             }
         }
         case "assignmentOperator": {
@@ -3890,7 +3939,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                 case "=": {
                     const leftRef = yield* evaluateExpression(ctx, expression.left);
                     const rightRef = yield* evaluateExpression(ctx, expression.right);
-                    const right = yield* referenceGetValue(rightRef);
+                    const right = yield* referenceGetValue(ctx, rightRef);
                     yield* referencePutValue(ctx, leftRef, right);
                     return right;
                 }
@@ -3898,9 +3947,9 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                     break;
             }
             const leftRef = yield* evaluateExpression(ctx, expression.left);
-            const left = yield* referenceGetValue(leftRef);
+            const left = yield* referenceGetValue(ctx, leftRef);
             const rightRef = yield* evaluateExpression(ctx, expression.right);
-            const right = yield* referenceGetValue(rightRef);
+            const right = yield* referenceGetValue(ctx, rightRef);
             switch (expression.operator) {
                 case "*=": {
                     const result = yield* multiply(ctx, left, right);
@@ -3963,8 +4012,8 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             }
         }
         case "commaOperator": {
-            yield* referenceGetValue(yield* evaluateExpression(ctx, expression.left));
-            return yield* referenceGetValue(yield* evaluateExpression(ctx, expression.right));
+            yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            return yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
         }
     }
     throw new Error();
@@ -3976,7 +4025,7 @@ function* runVariableDeclaration(ctx: Context, declaration: VariableDeclaration)
     }
     const left = resolveIdentifier(ctx.scope, declaration.name);
     const rightRef = yield* evaluateExpression(ctx, declaration.initializer);
-    const right = yield* referenceGetValue(rightRef);
+    const right = yield* referenceGetValue(ctx, rightRef);
     yield* referencePutValue(ctx, left, right);
 }
 
@@ -3991,7 +4040,7 @@ function* runVariableStatement(ctx: Context, statement: VariableStatement): Gene
 }
 
 function* runExpressionStatement(ctx: Context, statement: ExpressionStatement): Generator<unknown, Completion> {
-    const value = yield* referenceGetValue(yield* evaluateExpression(ctx, statement.expression));
+    const value = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, statement.expression));
     return {
         type: "normalCompletion",
         hasValue: true,
@@ -4001,7 +4050,7 @@ function* runExpressionStatement(ctx: Context, statement: ExpressionStatement): 
 
 function* runIfStatement(ctx: Context, statement: IfStatement): Generator<unknown, Completion> {
     const ref = yield* evaluateExpression(ctx, statement.expression);
-    const value = yield* referenceGetValue(ref);
+    const value = yield* referenceGetValue(ctx, ref);
     if (toBoolean(value)) {
         return yield* runStatement(ctx, statement.thenStatement);
     } else if (statement.elseStatement != null) {
@@ -4020,7 +4069,7 @@ function* runWhileStatement(ctx: Context, statement: WhileStatement): Generator<
     };
     while (true) {
         const ref = yield* evaluateExpression(ctx, statement.expression);
-        const value = yield* referenceGetValue(ref);
+        const value = yield* referenceGetValue(ctx, ref);
         if (!toBoolean(value)) {
             break;
         }
@@ -4052,14 +4101,14 @@ function* runForStatement(ctx: Context, statement: ForStatement): Generator<unkn
     };
     if (statement.initialization != null) {
         if (statement.initialization.type !== "variableStatement") {
-            yield* referenceGetValue(yield* evaluateExpression(ctx, statement.initialization));
+            yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, statement.initialization));
         } else {
             yield* runVariableStatement(ctx, statement.initialization);
         }
     }
     while (true) {
         if (statement.condition != null) {
-            if (!toBoolean(yield* referenceGetValue(yield* evaluateExpression(ctx, statement.condition)))) {
+            if (!toBoolean(yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, statement.condition)))) {
                 break;
             }
         }
@@ -4078,7 +4127,7 @@ function* runForStatement(ctx: Context, statement: ForStatement): Generator<unkn
             return result;
         }
         if (statement.afterthought != null) {
-            yield* referenceGetValue(yield* evaluateExpression(ctx, statement.afterthought));
+            yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, statement.afterthought));
         }
     }
     return completion;
@@ -4090,7 +4139,7 @@ function* runForInStatement(ctx: Context, statement: ForInStatement): Generator<
     }
     let obj = toObject(
         ctx.realm.intrinsics,
-        yield* referenceGetValue(yield* evaluateExpression(ctx, statement.expression))
+        yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, statement.expression))
     );
     let completion: Completion = {
         type: "normalCompletion",
@@ -4107,7 +4156,7 @@ function* runForInStatement(ctx: Context, statement: ForInStatement): Generator<
             }
             iterated.add(name);
             if (statement.initialization.type === "variableDeclaration") {
-                const ref = resolveIdentifier(ctx.scope, name);
+                const ref = resolveIdentifier(ctx.scope, statement.initialization.name);
                 yield* referencePutValue(ctx, ref, name);
             } else {
                 const ref = yield* evaluateExpression(ctx, statement.initialization);
@@ -4144,7 +4193,7 @@ function* runReturnStatement(ctx: Context, statement: ReturnStatement): Generato
             value: undefined,
         };
     }
-    const value = yield* referenceGetValue(yield* evaluateExpression(ctx, statement.expression));
+    const value = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, statement.expression));
     return {
         type: "returnCompletion",
         hasValue: true,
@@ -4154,10 +4203,11 @@ function* runReturnStatement(ctx: Context, statement: ReturnStatement): Generato
 
 function* runWithStatement(ctx: Context, statement: WithStatement): Generator<unknown, Completion> {
     const ref = yield* evaluateExpression(ctx, statement.expression);
-    const value = yield* referenceGetValue(ref);
+    const value = yield* referenceGetValue(ctx, ref);
     const object = toObject(ctx.realm.intrinsics, value);
     const withScope: Scope = {
         parent: ctx.scope,
+        activation: false,
         object,
     };
     const withContext: Context = {
@@ -4222,21 +4272,86 @@ function defineVariable(ctx: Context, list: VariableDeclaration[]) {
     }
 }
 
-function* defineFunction(ctx: Context, decl: FunctionDeclaration): Generator<unknown, void> {
+function* newFunction(ctx: Context, parameters: string[], block: Block): Generator<unknown, InterpreterObject> {
     function* call(ctx: Context, self: InterpreterObject | null, args: Value[]): Generator<unknown, Value> {
         const scope = {
-            parent: ctx.scope,
+            parent: ctx.realm.globalScope,
+            activation: true,
             object: newObject(ctx.realm.intrinsics.ObjectPrototype),
         };
         const context: Context = {
             scope,
-            this: self,
+            // The caller provides the this value. If the this value provided by the caller is not an object (including the case where it is null), then the this value is the global object.
+            this: isObject(self) ? self : ctx.realm.globalObject,
             realm: ctx.realm,
         };
-        for (let i = 0; i < decl.parameters.length; i++) {
-            yield* putProperty(context, scope.object, decl.parameters[i]!, args[i]);
+        const argumentsObject = newObject(ctx.realm.intrinsics.ObjectPrototype);
+        argumentsObject.properties.set("callee", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: func,
+        });
+        argumentsObject.properties.set("length", {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: args.length,
+        });
+        const iargToName = new Map<string, string>();
+        const nameToIArg = new Map<string, string>();
+        argumentsObject.internalProperties.get = function* (ctx, self, propertyName) {
+            const name = iargToName.get(propertyName);
+            if (name != null) {
+                return scope.object.properties.get(name)?.value;
+            }
+            const prop = self.properties.get(propertyName);
+            return prop?.value;
+        };
+        argumentsObject.internalProperties.put = function* (ctx, self, propertyName, value) {
+            const name = iargToName.get(propertyName);
+            if (name != null) {
+                const prop = scope.object.properties.get(name);
+                if (prop != null) prop.value = value;
+                return;
+            }
+            defaultPutProperty(ctx, self, propertyName, value);
+        };
+        scope.object.properties.set("arguments", {
+            readOnly: false,
+            dontEnum: false,
+            dontDelete: true,
+            internal: false,
+            value: argumentsObject,
+        });
+        for (let i = 0; i < parameters.length; i++) {
+            scope.object.properties.set(parameters[i]!, {
+                readOnly: false,
+                dontEnum: false,
+                dontDelete: true,
+                internal: false,
+                value: args[i],
+            });
+            nameToIArg.set(parameters[i]!, String(i));
         }
-        visitStatement(decl.block, (statement) => {
+        // CreateMappedArgumentsObject
+        for (let i = 0; i < args.length; i++) {
+            argumentsObject.properties.set(String(i), {
+                // newer ES: [[Writable]]: true, [[Enumerable]]: true, [[Configurable]]: true
+                // ES2: { DontEnum }
+                readOnly: false,
+                dontEnum: true,
+                dontDelete: false,
+                internal: false,
+                value: args[i],
+            });
+        }
+        for (const [name, iarg] of nameToIArg) {
+            iargToName.set(iarg, name);
+        }
+        visitStatement(block, (statement) => {
             if (statement.type === "variableStatement") {
                 defineVariable(context, statement.variableDeclarationList);
             }
@@ -4246,13 +4361,13 @@ function* defineFunction(ctx: Context, decl: FunctionDeclaration): Generator<unk
                 }
             }
         });
-        const completion = yield* runBlock(context, decl.block);
+        const completion = yield* runBlock(context, block);
         if (completion.type === "returnCompletion") {
             return completion.value;
         }
         return undefined;
     }
-    const func = createFunction(ctx.realm.intrinsics.FunctionPrototype, call, decl.parameters.length);
+    const func = newNativeFunction(ctx.realm.intrinsics.FunctionPrototype, call, parameters.length);
     const prototype = newObject(ctx.realm.intrinsics.ObjectPrototype);
     func.properties.set("prototype", {
         readOnly: false,
@@ -4269,7 +4384,7 @@ function* defineFunction(ctx: Context, decl: FunctionDeclaration): Generator<unk
         value: func,
     });
     func.internalProperties.construct = function* construct(ctx, args) {
-        const prototype = yield* getProperty(func, "prototype");
+        const prototype = yield* getProperty(ctx, func, "prototype");
         if (!isObject(prototype)) {
             throw new Error("FIXME");
         }
@@ -4277,6 +4392,11 @@ function* defineFunction(ctx: Context, decl: FunctionDeclaration): Generator<unk
         yield* call(ctx, self, args);
         return self;
     };
+    return func;
+}
+
+function* defineFunction(ctx: Context, decl: FunctionDeclaration): Generator<unknown, void> {
+    const func = yield* newFunction(ctx, decl.parameters, decl.block);
     yield* putProperty(ctx, ctx.realm.globalObject, decl.name, func);
 }
 
@@ -4287,13 +4407,32 @@ function* run(source: string): Generator<unknown, Completion> {
         hasValue: false,
     };
     const intrinsics = createIntrinsics();
-    const realm = {
-        intrinsics,
-        globalObject: createGlobal(intrinsics),
-    };
-    const globalScope = {
+    const globalObject = createGlobal(intrinsics);
+    globalObject.properties.set("sleep", {
+        readOnly: false,
+        dontEnum: false,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            intrinsics.FunctionPrototype,
+            function* (ctx, _self, args) {
+                const ms = yield* toNumber(ctx, args[0]);
+                return yield new Promise((resolve) => {
+                    setTimeout(() => resolve("slept"), ms);
+                });
+            },
+            1
+        ),
+    });
+    const globalScope: Scope = {
         parent: undefined,
-        object: realm.globalObject,
+        activation: false,
+        object: globalObject,
+    };
+    const realm: Realm = {
+        intrinsics,
+        globalObject,
+        globalScope,
     };
     const context: Context = {
         scope: globalScope,
