@@ -3621,6 +3621,41 @@ function createIntrinsics(): Intrinsics {
         const value = args.length === 0 ? 0 : yield* toNumber(ctx, args[0]);
         return newNumberObject(ctx.realm.intrinsics.NumberPrototype, value);
     };
+    number.properties.set("MAX_VALUE", {
+        readOnly: true,
+        dontEnum: true,
+        dontDelete: true,
+        internal: false,
+        value: Number.MAX_VALUE,
+    });
+    number.properties.set("MIN_VALUE", {
+        readOnly: true,
+        dontEnum: true,
+        dontDelete: true,
+        internal: false,
+        value: Number.MIN_VALUE,
+    });
+    number.properties.set("NaN", {
+        readOnly: true,
+        dontEnum: true,
+        dontDelete: true,
+        internal: false,
+        value: Number.NaN,
+    });
+    number.properties.set("NEGATIVE_INFINITY", {
+        readOnly: true,
+        dontEnum: true,
+        dontDelete: true,
+        internal: false,
+        value: Number.NEGATIVE_INFINITY,
+    });
+    number.properties.set("POSITIVE_INFINITY", {
+        readOnly: true,
+        dontEnum: true,
+        dontDelete: true,
+        internal: false,
+        value: Number.POSITIVE_INFINITY,
+    });
     const numberPrototype = newNumberObject(object, 0);
     numberPrototype.properties.set("constructor", {
         readOnly: false,
