@@ -52,7 +52,7 @@ test("tokenizer", () => {
     expect(error(() => filterByValue(tokenize("@")))).toBeTruthy();
     expect(error(() => filterByValue(tokenize("1e")))).toBeTruthy();
     expect(error(() => filterByValue(tokenize("1e+")))).toBeTruthy();
-    // expect(error(() => filterByValue(tokenize("'a\n'")))).toBeTruthy();
+    expect(error(() => filterByValue(tokenize("'a\n'")))).toBeTruthy();
     expect(filterByValue(tokenize(".e+1"))).toStrictEqual([".", "e", "+", 1]);
     expect(filterByValue(tokenize("."))).toStrictEqual(["."]);
     expect(filterByValue(tokenize("1e+2"))).toStrictEqual([1e2]);

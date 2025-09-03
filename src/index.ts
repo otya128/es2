@@ -670,6 +670,8 @@ function readStringLiteral(reader: Reader): StringLiteral {
                     }
                     break;
             }
+        } else if (isLineTerminator(char)) {
+            throw new UnexpectedCharacterError("StringLiteral", "not LineTerminator", reader.current, reader.position);
         } else {
             value += char;
         }
