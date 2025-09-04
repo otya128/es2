@@ -4690,4 +4690,34 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: "\x00\x00\x00",
     });
+    expect(
+        await runAsync(String.raw`
+        function a() {}
+        a.prototype = new String("hoge");
+        new a().length`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 4,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() {}
+        a.prototype = "hoge";
+        new a().length`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
+    });
+    expect(
+        await runAsync(String.raw`
+        function a() {}
+        a.prototype = null;
+        new a().toString()`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "[object Object]",
+    });
 });

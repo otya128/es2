@@ -5347,9 +5347,9 @@ function* newFunction(ctx: Context, parameters: string[], block: Block): Generat
         value: func,
     });
     func.internalProperties.construct = function* construct(ctx, args) {
-        const prototype = yield* getProperty(ctx, func, "prototype");
+        let prototype = yield* getProperty(ctx, func, "prototype");
         if (!isObject(prototype)) {
-            throw new Error("FIXME");
+            prototype = ctx.realm.intrinsics.ObjectPrototype;
         }
         const self = newObject(prototype);
         const result = yield* call(ctx, self, args);
