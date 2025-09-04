@@ -4671,4 +4671,12 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 1,
     });
+    await expect(runAsync(String.raw`function a(a,){}`)).rejects.toThrow();
+    await expect(runAsync(String.raw`Function("a,", "")`)).rejects.toThrow();
+    expect(await runAsync(String.raw`typeof Function("", "")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "function",
+    });
+    await expect(runAsync(String.raw`Function("", "", "")`)).rejects.toThrow();
 });

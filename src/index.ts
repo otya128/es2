@@ -1323,11 +1323,11 @@ function parseSourceElement(tokenizer: Tokenizer): SourceElement {
 
 function parseFormalParameterList(tokenizer: Tokenizer): string[] {
     const parameters: string[] = [];
+    if (tokenizer.current.type !== "identifier") {
+        return [];
+    }
     while (true) {
         const parameterOrEnd = tokenizer.current;
-        if (parameterOrEnd.type !== "identifier") {
-            break;
-        }
         parameters.push(parameterOrEnd.value);
         const commaOrEnd = tokenizer.next();
         if (commaOrEnd.type === "punctuator" && commaOrEnd.value === ",") {
