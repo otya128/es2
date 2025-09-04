@@ -2490,8 +2490,8 @@ function parseExpression(tokenizer: Tokenizer): Expression {
     }
 }
 
-type Value = null | undefined | number | string | boolean | InterpreterObject;
-type PrimitiveValue = undefined | null | boolean | number | string;
+export type Value = null | undefined | number | string | boolean | InterpreterObject;
+export type PrimitiveValue = undefined | null | boolean | number | string;
 
 type Completion = NormalCompletion | ReturnCompletion | AbruptCompletion;
 
@@ -2541,7 +2541,7 @@ type Reference = {
     name: string;
     activation: boolean;
 };
-type RefOrValue = null | undefined | number | boolean | string | Value | Reference;
+type RefOrValue = Value | Reference;
 
 function isReference(ref: RefOrValue): ref is Reference {
     if (ref == null || typeof ref !== "object") {
@@ -2553,7 +2553,7 @@ function isReference(ref: RefOrValue): ref is Reference {
     return false;
 }
 
-type Property = {
+export type Property = {
     readOnly: boolean;
     dontEnum: boolean;
     dontDelete: boolean;
@@ -2561,10 +2561,10 @@ type Property = {
     value: Value;
 };
 
-type DefaultValueHint = "string" | "number" | "default";
+export type DefaultValueHint = "string" | "number" | "default";
 
-type NativeFunction = (ctx: Context, self: InterpreterObject | null, args: Value[]) => Generator<unknown, Value>;
-type InterpreterObject = {
+export type NativeFunction = (ctx: Context, self: InterpreterObject | null, args: Value[]) => Generator<unknown, Value>;
+export type InterpreterObject = {
     internalProperties: {
         prototype: InterpreterObject | null;
         class: string;
@@ -2664,8 +2664,28 @@ function getType(value: Value): "undefined" | "null" | "boolean" | "number" | "s
     }
 }
 
-function isObject(value: Value): value is InterpreterObject {
+export function isObject(value: Value): value is InterpreterObject {
     return !isPrimitive(value);
+}
+
+function getNumberObjectValue(value: Value): number | undefined {
+    if (
+        isObject(value) &&
+        value.internalProperties.class === "Number" &&
+        typeof value.internalProperties.value === "number"
+    ) {
+        return value.internalProperties.value;
+    }
+}
+
+function getDateObjectValue(value: Value): number | undefined {
+    if (
+        isObject(value) &&
+        value.internalProperties.class === "Date" &&
+        typeof value.internalProperties.value === "number"
+    ) {
+        return value.internalProperties.value;
+    }
 }
 
 type Scope = {
@@ -2711,7 +2731,7 @@ type Realm = {
     globalScope: Scope;
 };
 
-function newObject(prototype: InterpreterObject): InterpreterObject {
+export function newObject(prototype: InterpreterObject): InterpreterObject {
     return {
         internalProperties: {
             prototype,
@@ -2789,7 +2809,11 @@ function newBooleanObject(prototype: InterpreterObject, value: boolean): Interpr
     };
 }
 
-function newNativeFunction(prototype: InterpreterObject, func: NativeFunction, length: number): InterpreterObject {
+export function newNativeFunction(
+    prototype: InterpreterObject,
+    func: NativeFunction,
+    length: number
+): InterpreterObject {
     return {
         internalProperties: {
             prototype,
@@ -2867,7 +2891,11 @@ function* defaultValue(
     value: InterpreterObject,
     hint: DefaultValueHint
 ): Generator<unknown, PrimitiveValue> {
-    // FIXME: Date
+    if (hint === "default") {
+        if (getDateObjectValue(value) != null) {
+            hint = "string";
+        }
+    }
     if (hint === "string") {
         const toString = yield* getProperty(ctx, value, "toString");
         if (isObject(toString)) {
@@ -2902,14 +2930,18 @@ function* defaultValue(
     throw new TypeError("ToPrimitive failed");
 }
 
-function* toPrimitive(ctx: Context, value: Value, preferredType: DefaultValueHint): Generator<unknown, PrimitiveValue> {
+export function* toPrimitive(
+    ctx: Context,
+    value: Value,
+    preferredType: DefaultValueHint
+): Generator<unknown, PrimitiveValue> {
     if (isPrimitive(value)) {
         return value;
     }
     return yield* defaultValue(ctx, value, preferredType);
 }
 
-function* toString(ctx: Context, value: Value): Generator<unknown, string> {
+export function* toString(ctx: Context, value: Value): Generator<unknown, string> {
     if (value === undefined) {
         return "undefined";
     }
@@ -3276,6 +3308,43 @@ function* arrayPrototypeSort(ctx: Context, self: InterpreterObject | null, args:
     const length = toUint32(yield* toNumber(ctx, yield* getProperty(ctx, self, "length")));
     yield* mergeSort(ctx, call, self, 0, length);
     return self;
+}
+
+function* dateConstructor(ctx: Context, args: Value[]): Generator<unknown, Value> {
+    args.length = Math.min(7, args.length);
+    let value: Date;
+    if (args.length === 1) {
+        const valuePrimitive = yield* toPrimitive(ctx, args[0], "default");
+        if (typeof valuePrimitive === "string") {
+            value = new Date(valuePrimitive);
+        } else {
+            value = new Date(yield* toNumber(ctx, valuePrimitive));
+        }
+    } else {
+        let numbers: number[] = [];
+        for (const arg of args) {
+            numbers.push(yield* toNumber(ctx, arg));
+        }
+        value = new Date(...(numbers as []));
+    }
+    const date: InterpreterObject = {
+        internalProperties: {
+            prototype: ctx.realm.intrinsics.DatePrototype,
+            class: "Date",
+            value: value.valueOf(),
+        },
+        properties: new Map([]),
+    };
+    return date;
+}
+
+function* dateUTC(ctx: Context, _self: Value, args: Value[]): Generator<unknown, Value> {
+    args.length = Math.min(7, args.length);
+    let numbers: number[] = [];
+    for (const arg of args) {
+        numbers.push(yield* toNumber(ctx, arg));
+    }
+    return Date.UTC(...(numbers as [number]));
 }
 
 function createIntrinsics(): Intrinsics {
@@ -3690,10 +3759,10 @@ function createIntrinsics(): Intrinsics {
         value: newNativeFunction(
             functionPrototype,
             function* numberToString(ctx, self, args) {
-                if (!isObject(self) || typeof self.internalProperties.value !== "number") {
+                const value = getNumberObjectValue(self);
+                if (value == null) {
                     throw new TypeError("Number.prototype.toString: this must be Number object");
                 }
-                const value = self.internalProperties.value;
                 const radix = args[0] === undefined ? 10 : yield* toNumber(ctx, args[0]);
                 // throws RnageError
                 return value.toString(radix); // l
@@ -3709,10 +3778,11 @@ function createIntrinsics(): Intrinsics {
         value: newNativeFunction(
             functionPrototype,
             function* numberValueOf(_ctx, self, _args) {
-                if (!isObject(self) || typeof self.internalProperties.value !== "number") {
+                const value = getNumberObjectValue(self);
+                if (value == null) {
                     throw new TypeError("Number.prototype.valueOf: this must be Number object");
                 }
-                return self.internalProperties.value;
+                return value;
             },
             1
         ),
@@ -3996,6 +4066,201 @@ function createIntrinsics(): Intrinsics {
             ),
         });
     }
+    const date = newNativeFunction(
+        functionPrototype,
+        function* date(_ctx, _self, _args) {
+            return new Date().toString();
+        },
+        7
+    );
+    date.internalProperties.construct = dateConstructor;
+    date.properties.set("UTC", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(functionPrototype, dateUTC, 7),
+    });
+    date.properties.set("parse", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* dateParse(ctx, _self, args) {
+                const string = yield* toString(ctx, args[0]);
+                return Date.parse(string);
+            },
+            1
+        ),
+    });
+    const datePrototype: InterpreterObject = newObject(objectPrototype);
+    datePrototype.properties.set("constructor", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: date,
+    });
+    datePrototype.properties.set("toString", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* dateToString(_ctx, self, _args) {
+                const value = getDateObjectValue(self);
+                if (value == null) {
+                    throw new TypeError("Date.prototype.toString: this must be Date object");
+                }
+                return new Date(value).toString();
+            },
+            1
+        ),
+    });
+    for (const f of [
+        "valueOf",
+        "getTime",
+        "getFullYear",
+        "getUTCFullYear",
+        "getMonth",
+        "getUTCMonth",
+        "getDate",
+        "getUTCDate",
+        "getDay",
+        "getUTCDay",
+        "getHours",
+        "getUTCHours",
+        "getMinutes",
+        "getUTCMinutes",
+        "getSeconds",
+        "getUTCSeconds",
+        "getMilliseconds",
+        "getUTCMilliseconds",
+        "getTimezoneOffset",
+        "toLocaleString",
+        "toUTCString",
+    ] as const) {
+        datePrototype.properties.set(f, {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: newNativeFunction(
+                functionPrototype,
+                function* datePrototypeWrapper(ctx, self, args) {
+                    const value = getDateObjectValue(self);
+                    if (value == null) {
+                        throw new TypeError(`Date.prototype.${f}: this must be Date object`);
+                    }
+                    return new Date(value)[f]();
+                },
+                0
+            ),
+        });
+    }
+    for (const [f, length] of [
+        ["setTime", 1],
+        ["setMilliseconds", 1],
+        ["setUTCMilliseconds", 1],
+        ["setSeconds", 2],
+        ["setUTCSeconds", 2],
+        ["setMinutes", 3],
+        ["setUTCMinutes", 3],
+        ["setHours", 4],
+        ["setUTCHours", 4],
+        ["setDate", 1],
+        ["setUTCDate", 1],
+        ["setMonth", 2],
+        ["setUTCMonth", 2],
+        ["setFullYear", 3],
+        ["setUTCFullYear", 3],
+    ] as const) {
+        datePrototype.properties.set(f, {
+            readOnly: false,
+            dontEnum: true,
+            dontDelete: false,
+            internal: false,
+            value: newNativeFunction(
+                functionPrototype,
+                function* datePrototypeWrapper(ctx, self, args) {
+                    const value = getDateObjectValue(self);
+                    if (value == null || !isObject(self)) {
+                        throw new TypeError(`Date.prototype.${f}: this must be Date object`);
+                    }
+                    args.length = Math.min(args.length, length);
+                    let numbers: number[] = [];
+                    for (const arg of args) {
+                        numbers.push(yield* toNumber(ctx, arg));
+                    }
+                    self.internalProperties.value = new Date(value)[f](...(numbers as [number]));
+                    return self.internalProperties.value;
+                },
+                length
+            ),
+        });
+    }
+    datePrototype.properties.set("getYear", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* datePrototypeGetYear(_ctx, self, _args) {
+                const value = getDateObjectValue(self);
+                if (value == null) {
+                    throw new TypeError(`Date.prototype.getYear: this must be Date object`);
+                }
+                return new Date(value).getFullYear() - 1900;
+            },
+            0
+        ),
+    });
+    datePrototype.properties.set("toGMTString", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* datePrototypeToUTCString(_ctx, self, _args) {
+                const value = getDateObjectValue(self);
+                if (value == null) {
+                    throw new TypeError(`Date.prototype.toGMTString: this must be Date object`);
+                }
+                return new Date(value).toUTCString();
+            },
+            0
+        ),
+    });
+    datePrototype.properties.set("setYear", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* datePrototypeSetSeconds(ctx, self, args) {
+                const value = getDateObjectValue(self);
+                if (value == null) {
+                    throw new TypeError(`Date.prototype.setSeconds: this must be Date object`);
+                }
+                const year = yield* toNumber(ctx, args[0]);
+                return new Date(value).setFullYear(year);
+            },
+            2
+        ),
+    });
+    date.properties.set("prototype", {
+        readOnly: true,
+        dontEnum: true,
+        dontDelete: true,
+        internal: false,
+        value: datePrototype,
+    });
     return {
         eval: evalFunction,
         parseInt: parseIntFunction,
@@ -4017,7 +4282,9 @@ function createIntrinsics(): Intrinsics {
         Number: number,
         NumberPrototype: numberPrototype,
         Math: math,
-    } as Intrinsics;
+        Date: date,
+        DatePrototype: datePrototype,
+    };
 }
 
 function createGlobal(intrinsics: Intrinsics): InterpreterObject {
@@ -4064,6 +4331,7 @@ function createGlobal(intrinsics: Intrinsics): InterpreterObject {
                     "Boolean",
                     "Number",
                     "Math",
+                    "Date",
                 ] as const
             ).map((name): [string, Property] => [
                 name,
@@ -4284,9 +4552,8 @@ function* modulo(ctx: Context, left: Value, right: Value): Generator<unknown, Va
 }
 
 function* add(ctx: Context, left: Value, right: Value): Generator<unknown, Value> {
-    // FIXME Date
-    const primitiveLeft = yield* toPrimitive(ctx, left, "number");
-    const primitiveRight = yield* toPrimitive(ctx, right, "number");
+    const primitiveLeft = yield* toPrimitive(ctx, left, "default");
+    const primitiveRight = yield* toPrimitive(ctx, right, "default");
     if (typeof primitiveLeft === "string" || typeof primitiveRight === "string") {
         return (yield* toString(ctx, primitiveLeft)) + (yield* toString(ctx, primitiveRight));
     }
@@ -5073,7 +5340,7 @@ function* defineFunction(ctx: Context, decl: FunctionDeclaration): Generator<unk
     yield* putProperty(ctx, findActivationObjectScope(ctx.scope)?.object ?? ctx.realm.globalObject, decl.name, func);
 }
 
-function createGlobalContext(): Context {
+export function createGlobalContext(): Context {
     const intrinsics = createIntrinsics();
     const globalObject = createGlobal(intrinsics);
     globalObject.properties.set("sleep", {
@@ -5149,8 +5416,8 @@ function* run(source: string, context: Context): Generator<unknown, Completion> 
     return completion;
 }
 
-export async function runAsync(source: string): Promise<Completion> {
-    const iter = run(source, createGlobalContext());
+export async function runInContext(source: string, context: Context): Promise<Completion> {
+    const iter = run(source, context);
     let lastResult: any = undefined;
     while (true) {
         const { value, done } = iter.next(lastResult);
@@ -5163,4 +5430,8 @@ export async function runAsync(source: string): Promise<Completion> {
             return value;
         }
     }
+}
+
+export function runAsync(source: string): Promise<Completion> {
+    return runInContext(source, createGlobalContext());
 }

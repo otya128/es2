@@ -1768,11 +1768,11 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: undefined,
     });
-    /*expect(await runAsync(String.raw`Function.prototype.constructor.prototype()`)).toStrictEqual({
+    expect(await runAsync(String.raw`Function.prototype.constructor.prototype()`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: undefined,
-    });*/
+    });
     await expect(runAsync("new Object.prototype")).rejects.toThrow();
     await expect(runAsync("Object.prototype()")).rejects.toThrow();
     expect(await runAsync("new Object().toString")).toMatchObject({
@@ -4219,6 +4219,20 @@ Number.prototype.hoge = 1;
     });
     expect(
         await runAsync(String.raw`
+        a = new Array(1, Object.undefined, 3, Object.undefined, Object.undefined, 2);
+        a.length *= 2;
+        a.sort();
+        count = 0;
+        for (var i in a)count++;
+        count
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 6,
+    });
+    expect(
+        await runAsync(String.raw`
         Array.prototype[1] = 1;
         a = new Array(2);
         a[0] = 2;
@@ -4464,6 +4478,129 @@ Number.prototype.hoge = 1;
         value: false,
     });
     expect(await runAsync(String.raw`isNaN(NaN)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`typeof Date()`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "string",
+    });
+    expect(await runAsync(String.raw`typeof new Date()`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "object",
+    });
+    expect(await runAsync(String.raw`typeof new Date().valueOf()`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "number",
+    });
+    expect(await runAsync(String.raw`Date.parse()`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
+    expect(await runAsync(String.raw`typeof Date.parse("2025")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "number",
+    });
+    expect(
+        await runAsync(String.raw`
+        Date.prototype.toS = Object.prototype.toString
+        Date.prototype.toS()
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "[object Object]",
+    });
+    expect(
+        await runAsync(String.raw`
+        var d = new Date();
+        Math.floor(d.valueOf() / 1000) == Math.floor(Date.parse(d) / 1000)
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`new Date(new Date().setUTCFullYear(1970, 0, 1)).setUTCHours(0, 0, 0, 0);`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(
+        await runAsync(String.raw`
+        var d = new Date();
+        d.setUTCFullYear(1970, 0, 1);
+        d.setUTCHours(0, 0, 0, 0);
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await runAsync(String.raw`typeof(new Date() + new Date())`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "string",
+    });
+    expect(await runAsync(String.raw`typeof(new Date() - new Date())`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "number",
+    });
+    expect(await runAsync(String.raw`typeof(-new Date())`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "number",
+    });
+    expect(await runAsync(String.raw`typeof(+new Date())`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "number",
+    });
+    expect(
+        await runAsync(String.raw`
+        var d = new Date();
+        var x = d.valueOf();
+        x == d`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(
+        await runAsync(String.raw`
+        var d = new Date();
+        var x = d.toString();
+        x == d`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        var d = new Date();
+        var y = d.valueOf();
+        d == y`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(
+        await runAsync(String.raw`
+        var d = new Date();
+        var y = d.toString();
+        d == y`)
+    ).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: true,
