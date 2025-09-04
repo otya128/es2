@@ -1323,18 +1323,21 @@ function parseSourceElement(tokenizer: Tokenizer): SourceElement {
 
 function parseFormalParameterList(tokenizer: Tokenizer): string[] {
     const parameters: string[] = [];
-    if (tokenizer.current.type !== "identifier") {
+    const firstParameter = tokenizer.current;
+    if (firstParameter.type !== "identifier") {
         return [];
     }
+    parameters.push(firstParameter.value);
     while (true) {
-        const parameterOrEnd = tokenizer.current;
-        parameters.push(parameterOrEnd.value);
         const commaOrEnd = tokenizer.next();
-        if (commaOrEnd.type === "punctuator" && commaOrEnd.value === ",") {
-            tokenizer.next();
-            continue;
+        if (commaOrEnd.type !== "punctuator" || commaOrEnd.value !== ",") {
+            break;
         }
-        break;
+        const parameter = tokenizer.next();
+        if (parameter.type !== "identifier") {
+            throw new UnexpectedTokenError("FormalParameterList", "Identifier", parameter);
+        }
+        parameters.push(parameter.value);
     }
     return parameters;
 }

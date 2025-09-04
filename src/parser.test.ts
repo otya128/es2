@@ -1081,6 +1081,8 @@ a /= 2;
         type: "program",
         sourceElements: [] as SourceElement[],
     } as Program);
+    expect(error(() => parse(String.raw`function a(a,){}`))).toBeTruthy();
+    expect(error(() => parse(String.raw`function a(a,)){}`))).toBeTruthy();
     expect(
         parse(String.raw`anc/=2;function func(a, b){
 anc /= 2;
@@ -4671,7 +4673,6 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 1,
     });
-    await expect(runAsync(String.raw`function a(a,){}`)).rejects.toThrow();
     await expect(runAsync(String.raw`Function("a,", "")`)).rejects.toThrow();
     expect(await runAsync(String.raw`typeof Function("", "")`)).toStrictEqual({
         type: "normalCompletion",
