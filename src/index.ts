@@ -2493,7 +2493,7 @@ function parseExpression(tokenizer: Tokenizer): Expression {
 export type Value = null | undefined | number | string | boolean | InterpreterObject;
 export type PrimitiveValue = undefined | null | boolean | number | string;
 
-type Completion = NormalCompletion | ReturnCompletion | AbruptCompletion;
+export type Completion = NormalCompletion | ReturnCompletion | AbruptCompletion;
 
 type NormalCompletion =
     | {
@@ -2694,7 +2694,7 @@ type Scope = {
     object: InterpreterObject;
 };
 
-type Context = {
+export type Context = {
     scope: Scope;
     this: InterpreterObject | null;
     realm: Realm;
@@ -2960,7 +2960,7 @@ export function* toString(ctx: Context, value: Value): Generator<unknown, string
     return yield* toString(ctx, yield* toPrimitive(ctx, value, "string"));
 }
 
-function* toNumber(ctx: Context, value: Value): Generator<unknown, number> {
+export function* toNumber(ctx: Context, value: Value): Generator<unknown, number> {
     if (value === undefined) {
         return NaN;
     }
@@ -5357,22 +5357,6 @@ function* defineFunction(ctx: Context, decl: FunctionDeclaration): Generator<unk
 export function createGlobalContext(): Context {
     const intrinsics = createIntrinsics();
     const globalObject = createGlobal(intrinsics);
-    globalObject.properties.set("sleep", {
-        readOnly: false,
-        dontEnum: false,
-        dontDelete: false,
-        internal: false,
-        value: newNativeFunction(
-            intrinsics.FunctionPrototype,
-            function* (ctx, _self, args) {
-                const ms = yield* toNumber(ctx, args[0]);
-                return yield new Promise((resolve) => {
-                    setTimeout(() => resolve("slept"), ms);
-                });
-            },
-            1
-        ),
-    });
     const globalScope: Scope = {
         parent: undefined,
         activation: false,

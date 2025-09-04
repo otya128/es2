@@ -4624,13 +4624,4 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: "object",
     });
-    expect(
-        await runAsync(String.raw`
-        sleep(1);
-    `)
-    ).toStrictEqual({
-        type: "normalCompletion",
-        hasValue: true,
-        value: "slept",
-    });
 });
