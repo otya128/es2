@@ -4680,4 +4680,14 @@ Number.prototype.hoge = 1;
         value: "function",
     });
     await expect(runAsync(String.raw`Function("", "", "")`)).rejects.toThrow();
+    expect(await runAsync(String.raw`String.fromCharCode(65,66)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "AB",
+    });
+    expect(await runAsync(String.raw`String.fromCharCode(null, Object.undefined, NaN)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "\x00\x00\x00",
+    });
 });

@@ -1775,7 +1775,7 @@ function parseReturnStatement(tokenizer: Tokenizer, state: ParserState): ReturnS
         throw new UnexpectedTokenError("ReturnStatement", "return", token);
     }
     if (!state.function) {
-        throw new SyntaxError("ReturnStateent", "return statements are only allowed inside functions", token.start);
+        throw new SyntaxError("ReturnStatement", "return statements are only allowed inside functions", token.start);
     }
     tokenizer.next();
     if (!parseSemicolon(tokenizer)) {
@@ -3540,6 +3540,23 @@ function createIntrinsics(): Intrinsics {
         const value = args.length === 0 ? "" : yield* toString(ctx, args[0]);
         return newStringObject(ctx.realm.intrinsics.StringPrototype, value);
     };
+    string.properties.set("fromCharCode", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* stringFromCharCode(ctx, self, args) {
+                const codes: number[] = [];
+                for (const arg of args) {
+                    codes.push(yield* toNumber(ctx, arg));
+                }
+                return String.fromCharCode(...codes);
+            },
+            1
+        ),
+    });
     const stringPrototype = newStringObject(objectPrototype, "");
     stringPrototype.properties.set("constructor", {
         readOnly: false,
