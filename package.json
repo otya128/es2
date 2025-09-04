@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "vite --port 5555",
-    "build": "vite build",
-    "preview": "vite preview",
+    "demo:dev": "vite --port 5555",
+    "demo:build": "vite build",
+    "demo:preview": "vite preview",
     "test": "npx --node-options=--stack_trace_limit=200 vitest --disable-console-intercept",
     "coverage": "vitest run --coverage"
   },
@@ -13,6 +13,7 @@
   "license": "MIT",
   "description": "",
   "devDependencies": {
+    "@types/node": "^24.3.1",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.2",
