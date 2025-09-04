@@ -3506,7 +3506,21 @@ function createIntrinsics(): Intrinsics {
                 }
                 return `[object ${self.internalProperties.class}]`;
             },
-            1
+            0
+        ),
+    });
+    objectPrototype.properties.set("valueOf", {
+        readOnly: false,
+        dontEnum: true,
+        dontDelete: false,
+        internal: false,
+        value: newNativeFunction(
+            functionPrototype,
+            function* objectValueOf(_ctx, self, _args) {
+                // FIXME: host object
+                return self;
+            },
+            0
         ),
     });
     const string = newNativeFunction(

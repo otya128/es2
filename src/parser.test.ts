@@ -4607,6 +4607,25 @@ Number.prototype.hoge = 1;
     });
     expect(
         await runAsync(String.raw`
+        var o = new Object;
+        o == o.valueOf()`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        var o = new Object(1);
+        o.valueOf = Object.prototype.valueOf;
+        typeof o.valueOf()`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "object",
+    });
+    expect(
+        await runAsync(String.raw`
         sleep(1);
     `)
     ).toStrictEqual({
