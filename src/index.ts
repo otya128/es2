@@ -1268,12 +1268,18 @@ class Tokenizer {
     }
 }
 
+type ParserState = {
+    for: boolean;
+    while: boolean;
+    function: boolean;
+};
+
 export function parse(source: string): Program {
     const tokenizer = new Tokenizer(source);
     return parseProgram(tokenizer);
 }
 
-export function parseStatementList(source: string): Block {
+export function parseStatementList(source: string, state: ParserState): Block {
     const tokenizer = new Tokenizer(source);
     const begin = tokenizer.current;
     const statementList: Statement[] = [];
@@ -1282,7 +1288,7 @@ export function parseStatementList(source: string): Block {
         if (end.type === "end") {
             break;
         }
-        statementList.push(parseStatement(tokenizer));
+        statementList.push(parseStatement(tokenizer, state));
     }
     return {
         type: "block",
@@ -1311,7 +1317,7 @@ function parseSourceElement(tokenizer: Tokenizer): SourceElement {
     if (token.type === "keyword" && token.value === "function") {
         return parseFunctionDeclaration(tokenizer);
     } else {
-        return parseStatement(tokenizer);
+        return parseStatement(tokenizer, { for: false, while: false, function: false });
     }
 }
 
@@ -1357,16 +1363,16 @@ function parseFunctionDeclaration(tokenizer: Tokenizer): FunctionDeclaration {
         type: "functionDeclaration",
         name: name.value,
         parameters,
-        block: parseBlock(tokenizer),
+        block: parseBlock(tokenizer, { for: false, while: false, function: true }),
         start: token.start,
         end: tokenizer.prevPosition,
     };
 }
 
-function parseStatement(tokenizer: Tokenizer): Statement {
+function parseStatement(tokenizer: Tokenizer, state: ParserState): Statement {
     const begin = tokenizer.current;
     if (begin.type === "punctuator" && begin.value === "{") {
-        return parseBlock(tokenizer);
+        return parseBlock(tokenizer, state);
     }
     if (begin.type === "keyword" && begin.value === "var") {
         return parseVariableStatement(tokenizer);
@@ -1408,25 +1414,25 @@ function parseStatement(tokenizer: Tokenizer): Statement {
         return parseEmptyStatement(tokenizer);
     }
     if (begin.type === "keyword" && begin.value === "if") {
-        return parseIfStatement(tokenizer);
+        return parseIfStatement(tokenizer, state);
     }
     if (begin.type === "keyword" && begin.value === "for") {
-        return parseForStatement(tokenizer);
+        return parseForStatement(tokenizer, state);
     }
     if (begin.type === "keyword" && begin.value === "while") {
-        return parseWhileStatement(tokenizer);
+        return parseWhileStatement(tokenizer, state);
     }
     if (begin.type === "keyword" && begin.value === "continue") {
-        return parseContinueStatement(tokenizer);
+        return parseContinueStatement(tokenizer, state);
     }
     if (begin.type === "keyword" && begin.value === "break") {
-        return parseBreakStatement(tokenizer);
+        return parseBreakStatement(tokenizer, state);
     }
     if (begin.type === "keyword" && begin.value === "return") {
-        return parseReturnStatement(tokenizer);
+        return parseReturnStatement(tokenizer, state);
     }
     if (begin.type === "keyword" && begin.value === "with") {
-        return parseWithStatement(tokenizer);
+        return parseWithStatement(tokenizer, state);
     }
     throw new UnexpectedTokenError(
         "Statement",
@@ -1435,7 +1441,7 @@ function parseStatement(tokenizer: Tokenizer): Statement {
     );
 }
 
-function parseBlock(tokenizer: Tokenizer): Block {
+function parseBlock(tokenizer: Tokenizer, state: ParserState): Block {
     const begin = tokenizer.current;
     if (begin.type !== "punctuator" || begin.value !== "{") {
         throw new UnexpectedTokenError("Block", "{", begin);
@@ -1448,7 +1454,7 @@ function parseBlock(tokenizer: Tokenizer): Block {
             tokenizer.next();
             break;
         }
-        statementList.push(parseStatement(tokenizer));
+        statementList.push(parseStatement(tokenizer, state));
     }
     return {
         type: "block",
@@ -1561,7 +1567,7 @@ function parseEmptyStatement(tokenizer: Tokenizer): EmptyStatement {
     };
 }
 
-function parseIfStatement(tokenizer: Tokenizer): IfStatement {
+function parseIfStatement(tokenizer: Tokenizer, state: ParserState): IfStatement {
     const begin = tokenizer.current;
     if (begin.type !== "keyword" || begin.value !== "if") {
         throw new UnexpectedTokenError("IfStatement", "if", begin);
@@ -1577,12 +1583,12 @@ function parseIfStatement(tokenizer: Tokenizer): IfStatement {
         throw new UnexpectedTokenError("IfStatement", ")", begin);
     }
     tokenizer.next();
-    const thenStatement = parseStatement(tokenizer);
+    const thenStatement = parseStatement(tokenizer, state);
     let elseStatement: Statement | undefined;
     const elseToken = tokenizer.current;
     if (elseToken.type === "keyword" && elseToken.value === "else") {
         tokenizer.next();
-        elseStatement = parseStatement(tokenizer);
+        elseStatement = parseStatement(tokenizer, state);
     }
     return {
         type: "ifStatement",
@@ -1594,7 +1600,7 @@ function parseIfStatement(tokenizer: Tokenizer): IfStatement {
     };
 }
 
-function parseWhileStatement(tokenizer: Tokenizer): WhileStatement {
+function parseWhileStatement(tokenizer: Tokenizer, state: ParserState): WhileStatement {
     const begin = tokenizer.current;
     if (begin.type !== "keyword" || begin.value !== "while") {
         throw new UnexpectedTokenError("WhileStatement", "while", begin);
@@ -1610,7 +1616,7 @@ function parseWhileStatement(tokenizer: Tokenizer): WhileStatement {
         throw new UnexpectedTokenError("WhileStatement", ")", pe);
     }
     tokenizer.next();
-    const statement = parseStatement(tokenizer);
+    const statement = parseStatement(tokenizer, { ...state, while: true });
     return {
         type: "whileStatement",
         expression,
@@ -1620,7 +1626,7 @@ function parseWhileStatement(tokenizer: Tokenizer): WhileStatement {
     };
 }
 
-function parseForStatement(tokenizer: Tokenizer): ForStatement | ForInStatement {
+function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStatement | ForInStatement {
     const begin = tokenizer.current;
     if (begin.type !== "keyword" || begin.value !== "for") {
         throw new UnexpectedTokenError("ForStatement", "for", begin);
@@ -1664,7 +1670,7 @@ function parseForStatement(tokenizer: Tokenizer): ForStatement | ForInStatement 
             throw new UnexpectedTokenError("ForStatement", ")", secondSemicolon);
         }
         tokenizer.next();
-        const statement = parseStatement(tokenizer);
+        const statement = parseStatement(tokenizer, { ...state, for: true });
         return {
             type: "forStatement",
             initialization,
@@ -1708,7 +1714,7 @@ function parseForStatement(tokenizer: Tokenizer): ForStatement | ForInStatement 
             throw new UnexpectedTokenError("ForStatement", ")", begin);
         }
         tokenizer.next();
-        const statement = parseStatement(tokenizer);
+        const statement = parseStatement(tokenizer, { ...state, for: true });
         return {
             type: "forInStatement",
             initialization: forInIntialization,
@@ -1722,10 +1728,13 @@ function parseForStatement(tokenizer: Tokenizer): ForStatement | ForInStatement 
     }
 }
 
-function parseContinueStatement(tokenizer: Tokenizer): ContinueStatement {
+function parseContinueStatement(tokenizer: Tokenizer, state: ParserState): ContinueStatement {
     const token = tokenizer.current;
     if (token.type !== "keyword" || token.value !== "continue") {
         throw new UnexpectedTokenError("ContinueStatement", "continue", token);
+    }
+    if (!state.while && !state.for) {
+        throw new SyntaxError("ContinueStatement", "break statements are only allowed inside while/for", token.start);
     }
     tokenizer.next();
     if (!parseSemicolon(tokenizer)) {
@@ -1738,10 +1747,13 @@ function parseContinueStatement(tokenizer: Tokenizer): ContinueStatement {
     };
 }
 
-function parseBreakStatement(tokenizer: Tokenizer): BreakStatement {
+function parseBreakStatement(tokenizer: Tokenizer, state: ParserState): BreakStatement {
     const token = tokenizer.current;
     if (token.type !== "keyword" || token.value !== "break") {
         throw new UnexpectedTokenError("BreakStatement", "break", token);
+    }
+    if (!state.while && !state.for) {
+        throw new SyntaxError("BreakStatement", "break statements are only allowed inside while/for", token.start);
     }
     tokenizer.next();
     if (!parseSemicolon(tokenizer)) {
@@ -1754,10 +1766,13 @@ function parseBreakStatement(tokenizer: Tokenizer): BreakStatement {
     };
 }
 
-function parseReturnStatement(tokenizer: Tokenizer): ReturnStatement {
+function parseReturnStatement(tokenizer: Tokenizer, state: ParserState): ReturnStatement {
     const token = tokenizer.current;
     if (token.type !== "keyword" || token.value !== "return") {
         throw new UnexpectedTokenError("ReturnStatement", "return", token);
+    }
+    if (!state.function) {
+        throw new SyntaxError("ReturnStateent", "return statements are only allowed inside functions", token.start);
     }
     tokenizer.next();
     if (!parseSemicolon(tokenizer)) {
@@ -1780,7 +1795,7 @@ function parseReturnStatement(tokenizer: Tokenizer): ReturnStatement {
     };
 }
 
-function parseWithStatement(tokenizer: Tokenizer): WithStatement {
+function parseWithStatement(tokenizer: Tokenizer, state: ParserState): WithStatement {
     const begin = tokenizer.current;
     if (begin.type !== "keyword" || begin.value !== "with") {
         throw new UnexpectedTokenError("WithStatement", "with", begin);
@@ -1796,7 +1811,7 @@ function parseWithStatement(tokenizer: Tokenizer): WithStatement {
         throw new UnexpectedTokenError("WithStatement", ")", pe);
     }
     tokenizer.next();
-    const statement = parseStatement(tokenizer);
+    const statement = parseStatement(tokenizer, state);
     return {
         type: "withStatement",
         expression,
@@ -2982,7 +2997,7 @@ function* constructFunction(ctx: Context, args: Value[]): Generator<unknown, Int
     if (tokenizer.current.type !== "end") {
         throw new Error("Function: illegal arguments: " + argsStrings.join(","));
     }
-    const block = parseStatementList(body);
+    const block = parseStatementList(body, { for: false, while: false, function: true });
     return yield* newFunction(ctx, parameters, block);
 }
 

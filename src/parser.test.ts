@@ -505,36 +505,38 @@ while (1) {
             },
         ],
     } as Program);
-    expect(omitPosition(parse(String.raw`break;continue;return 1;`))).toStrictEqual({
+    expect(error(() => parse("break"))).toBeTruthy();
+    expect(error(() => parse("continue"))).toBeTruthy();
+    expect(error(() => parse("with(1){continue}"))).toBeTruthy();
+    expect(error(() => parse("while(1){with(1){continue}}"))).toBeFalsy();
+    expect(error(() => parse("while(1){with(1){if(0)continue;else continue;}}"))).toBeFalsy();
+    expect(error(() => parse("for(;;){with(1){if(0)continue;else continue;}}"))).toBeFalsy();
+    expect(error(() => parse("with(1){break}"))).toBeTruthy();
+    expect(error(() => parse("while(1){with(1){break}}"))).toBeFalsy();
+    expect(error(() => parse("while(1){with(1){if(0)break;else break;}}"))).toBeFalsy();
+    expect(error(() => parse("for(;;){with(1){if(0)break;else break;}}"))).toBeFalsy();
+    expect(error(() => parse("for(;;){for(;;){break;}break;}"))).toBeFalsy();
+    expect(error(() => parse("for(;;){for(;;){continue;}continue;}"))).toBeFalsy();
+    expect(omitPosition(parse(String.raw`while(1){break;continue;}`))).toStrictEqual({
         type: "program",
         sourceElements: [
             {
-                type: "breakStatement",
-            },
-            {
-                type: "continueStatement",
-            },
-            {
-                type: "returnStatement",
-                expression: { type: "literalExpression", value: 1 },
-            },
-        ],
-    } as Program);
-    expect(
-        omitPosition(
-            parse(String.raw`return
-1`)
-        )
-    ).toStrictEqual({
-        type: "program",
-        sourceElements: [
-            {
-                type: "returnStatement",
-                expression: undefined,
-            },
-            {
-                type: "expressionStatement",
-                expression: { type: "literalExpression", value: 1 },
+                type: "whileStatement",
+                expression: {
+                    type: "literalExpression",
+                    value: 1,
+                },
+                statement: {
+                    type: "block",
+                    statementList: [
+                        {
+                            type: "breakStatement",
+                        },
+                        {
+                            type: "continueStatement",
+                        },
+                    ],
+                },
             },
         ],
     } as Program);
@@ -975,6 +977,38 @@ while (1) {
                 block: {
                     type: "block",
                     statementList: [] as Statement[],
+                },
+            },
+        ],
+    } as Program);
+    expect(error(() => parse("return"))).toBeTruthy();
+    expect(error(() => parse("function func(){return;}"))).toBeFalsy();
+    expect(error(() => parse("function func(){with(1){for(;;)while(1)if(1)return;else return;}}"))).toBeFalsy();
+    expect(
+        omitPosition(
+            parse(String.raw`function func(){return
+1
+            }`)
+        )
+    ).toStrictEqual({
+        type: "program",
+        sourceElements: [
+            {
+                type: "functionDeclaration",
+                name: "func",
+                parameters: [] as string[],
+                block: {
+                    type: "block",
+                    statementList: [
+                        {
+                            type: "returnStatement",
+                            expression: undefined,
+                        },
+                        {
+                            type: "expressionStatement",
+                            expression: { type: "literalExpression", value: 1 },
+                        },
+                    ],
                 },
             },
         ],
