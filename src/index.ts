@@ -5332,7 +5332,10 @@ function* newFunction(ctx: Context, parameters: string[], block: Block): Generat
             throw new Error("FIXME");
         }
         const self = newObject(prototype);
-        yield* call(ctx, self, args);
+        const result = yield* call(ctx, self, args);
+        if (isObject(result)) {
+            return result;
+        }
         return self;
     };
     return func;

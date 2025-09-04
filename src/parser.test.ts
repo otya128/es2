@@ -4624,4 +4624,51 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: "object",
     });
+    expect(
+        await runAsync(String.raw`
+        function func() {
+            return String;
+        }
+        new func() == String;`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        function func() {
+            return 1;
+        }
+        func.prototype.hoge = 1;
+        new func().hoge;`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function func() {
+            return null;
+        }
+        func.prototype.hoge = 1;
+        new func().hoge;`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        function func() {
+            return Object.undef;
+        }
+        func.prototype.hoge = 1;
+        new func().hoge;`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
 });
