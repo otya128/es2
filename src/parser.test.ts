@@ -3598,6 +3598,43 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 2,
     });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(10);
+        count = 0;
+        for (var i in a)count++;
+        count;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(10);
+        a[1] = 1;
+        count = 0;
+        for (var i in a)count++;
+        count;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        var a = new Array(1, 2, 3);
+        count = 0;
+        for (var i in a)count++;
+        count;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 3,
+    });
     expect(await runAsync(String.raw`new Array("100")[0]`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,

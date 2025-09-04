@@ -3097,8 +3097,8 @@ function* arrayConstructor(ctx: Context, args: Value[]): Generator<unknown, Valu
                 String(i),
                 {
                     readOnly: false,
-                    dontEnum: true,
-                    dontDelete: true,
+                    dontEnum: false,
+                    dontDelete: false,
                     internal: false,
                     value,
                 },
@@ -3249,7 +3249,9 @@ function* arraySortCompare(ctx: Context, x: Value, y: Value, comparefn?: NativeF
         return -1;
     }
     if (comparefn != null) {
-        return yield* toNumber(ctx, yield* comparefn(ctx, null, [x, y])); // FIXME: this
+        // this = null
+        // newer ES spec: ? ToNumber(? Call(comparator, undefined, « x, y »))
+        return yield* toNumber(ctx, yield* comparefn(ctx, null, [x, y]));
     }
     const result7 = yield* toString(ctx, x);
     const result8 = yield* toString(ctx, y);
