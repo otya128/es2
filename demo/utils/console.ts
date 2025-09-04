@@ -8,7 +8,6 @@ export function setupConsole(context: Context, onLog: (value: Value) => void) {
         readOnly: false,
         dontEnum: false,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             context.realm.intrinsics.FunctionPrototype,
             function* log(_ctx, _, args) {
@@ -25,14 +24,12 @@ export function setupConsole(context: Context, onLog: (value: Value) => void) {
         readOnly: false,
         dontEnum: false,
         dontDelete: false,
-        internal: false,
         value: consoleObject,
     });
     context.realm.globalObject.properties.set("sleep", {
         readOnly: false,
         dontEnum: false,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             context.realm.intrinsics.FunctionPrototype,
             function* (ctx, _self, args) {

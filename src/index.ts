@@ -2560,7 +2560,6 @@ export type Property = {
     readOnly: boolean;
     dontEnum: boolean;
     dontDelete: boolean;
-    internal: boolean;
     value: Value;
 };
 
@@ -2617,7 +2616,6 @@ function defaultPutProperty(ctx: Context, self: InterpreterObject, propertyName:
             readOnly: false,
             dontEnum: false,
             dontDelete: false,
-            internal: false,
             value,
         });
     }
@@ -2782,7 +2780,6 @@ function newStringObject(prototype: InterpreterObject, value: string): Interpret
                     readOnly: true,
                     dontEnum: true,
                     dontDelete: true,
-                    internal: false,
                     value: value.length,
                 },
             ],
@@ -2831,7 +2828,6 @@ export function newNativeFunction(
                     readOnly: true,
                     dontEnum: true,
                     dontDelete: true,
-                    internal: false,
                     value: length,
                 },
             ],
@@ -3056,7 +3052,6 @@ function* putArrayProperty(
             readOnly: false,
             dontEnum: false,
             dontDelete: false,
-            internal: false,
             value,
         };
         self.properties.set(propertyName, desc);
@@ -3124,7 +3119,6 @@ function* arrayConstructor(ctx: Context, args: Value[]): Generator<unknown, Valu
                     readOnly: false,
                     dontEnum: true,
                     dontDelete: true,
-                    internal: false,
                     value: len,
                 },
             ],
@@ -3134,7 +3128,6 @@ function* arrayConstructor(ctx: Context, args: Value[]): Generator<unknown, Valu
                     readOnly: false,
                     dontEnum: false,
                     dontDelete: false,
-                    internal: false,
                     value,
                 },
             ]),
@@ -3375,7 +3368,6 @@ function createIntrinsics(): Intrinsics {
                     readOnly: true,
                     dontEnum: true,
                     dontDelete: true,
-                    internal: false,
                     value: 0,
                 },
             ],
@@ -3412,7 +3404,6 @@ function createIntrinsics(): Intrinsics {
                     readOnly: true,
                     dontEnum: true,
                     dontDelete: true,
-                    internal: false,
                     value: 1,
                 },
             ],
@@ -3422,7 +3413,6 @@ function createIntrinsics(): Intrinsics {
                     readOnly: true,
                     dontEnum: true,
                     dontDelete: true,
-                    internal: false,
                     value: objectPrototype,
                 },
             ],
@@ -3445,7 +3435,6 @@ function createIntrinsics(): Intrinsics {
                     readOnly: true,
                     dontEnum: true,
                     dontDelete: true,
-                    internal: false,
                     value: functionPrototype,
                 },
             ],
@@ -3455,7 +3444,6 @@ function createIntrinsics(): Intrinsics {
                     readOnly: true,
                     dontEnum: true,
                     dontDelete: true,
-                    internal: false,
                     value: 1,
                 },
             ],
@@ -3465,14 +3453,12 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: functionObject,
     });
     functionPrototype.properties.set("toString", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* functionToString(_ctx, self, _args) {
@@ -3490,14 +3476,12 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: object,
     });
     objectPrototype.properties.set("toString", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* objectToString(_ctx, self, _args) {
@@ -3516,7 +3500,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* objectValueOf(_ctx, self, _args) {
@@ -3544,7 +3527,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* stringFromCharCode(ctx, self, args) {
@@ -3562,14 +3544,12 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: string,
     });
     stringPrototype.properties.set("toString", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* stringToString(_ctx, self, _args) {
@@ -3585,7 +3565,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* stringValueOf(_ctx, self, _args) {
@@ -3601,7 +3580,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* stringCharAt(ctx, self, args) {
@@ -3616,7 +3594,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* stringCharCodeAt(ctx, self, args) {
@@ -3631,7 +3608,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* stringIndexOf(ctx, self, args) {
@@ -3647,7 +3623,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* stringLastIndexOf(ctx, self, args) {
@@ -3663,7 +3638,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* stringSplit(ctx, self, args) {
@@ -3681,7 +3655,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* stringSubstring(ctx, self, args) {
@@ -3697,7 +3670,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* stringToLowerCase(ctx, self, _args) {
@@ -3711,7 +3683,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* stringToUpperCase(ctx, self, _args) {
@@ -3725,7 +3696,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: true,
         dontEnum: true,
         dontDelete: true,
-        internal: false,
         value: stringPrototype,
     });
     const number = newNativeFunction(
@@ -3746,35 +3716,30 @@ function createIntrinsics(): Intrinsics {
         readOnly: true,
         dontEnum: true,
         dontDelete: true,
-        internal: false,
         value: Number.MAX_VALUE,
     });
     number.properties.set("MIN_VALUE", {
         readOnly: true,
         dontEnum: true,
         dontDelete: true,
-        internal: false,
         value: Number.MIN_VALUE,
     });
     number.properties.set("NaN", {
         readOnly: true,
         dontEnum: true,
         dontDelete: true,
-        internal: false,
         value: Number.NaN,
     });
     number.properties.set("NEGATIVE_INFINITY", {
         readOnly: true,
         dontEnum: true,
         dontDelete: true,
-        internal: false,
         value: Number.NEGATIVE_INFINITY,
     });
     number.properties.set("POSITIVE_INFINITY", {
         readOnly: true,
         dontEnum: true,
         dontDelete: true,
-        internal: false,
         value: Number.POSITIVE_INFINITY,
     });
     const numberPrototype = newNumberObject(objectPrototype, 0);
@@ -3782,14 +3747,12 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: number,
     });
     numberPrototype.properties.set("toString", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* numberToString(ctx, self, args) {
@@ -3808,7 +3771,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* numberValueOf(_ctx, self, _args) {
@@ -3825,7 +3787,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: true,
         dontEnum: true,
         dontDelete: true,
-        internal: false,
         value: numberPrototype,
     });
     const boolean = newNativeFunction(
@@ -3847,14 +3808,12 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: boolean,
     });
     booleanPrototype.properties.set("toString", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* booleanToString(_ctx, self, _args) {
@@ -3871,7 +3830,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* booleanValueOf(_ctx, self, _args) {
@@ -3887,7 +3845,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: true,
         dontEnum: true,
         dontDelete: true,
-        internal: false,
         value: booleanPrototype,
     });
     const arrayPrototype: InterpreterObject = {
@@ -3904,7 +3861,6 @@ function createIntrinsics(): Intrinsics {
                     readOnly: false,
                     dontEnum: true,
                     dontDelete: true,
-                    internal: false,
                     value: 0,
                 },
             ],
@@ -3922,42 +3878,36 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: array,
     });
     arrayPrototype.properties.set("toString", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(functionPrototype, arrayPrototypeToString, 0),
     });
     arrayPrototype.properties.set("join", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(functionPrototype, arrayPrototypeJoin, 1),
     });
     arrayPrototype.properties.set("reverse", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(functionPrototype, arrayPrototypeReverse, 0),
     });
     arrayPrototype.properties.set("sort", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(functionPrototype, arrayPrototypeSort, 1),
     });
     array.properties.set("prototype", {
         readOnly: true,
         dontEnum: true,
         dontDelete: true,
-        internal: false,
         value: arrayPrototype,
     });
     const evalFunction = newNativeFunction(
@@ -4034,7 +3984,6 @@ function createIntrinsics(): Intrinsics {
             readOnly: true,
             dontEnum: true,
             dontDelete: true,
-            internal: false,
             value: Math[a],
         });
     }
@@ -4043,7 +3992,6 @@ function createIntrinsics(): Intrinsics {
             readOnly: false,
             dontEnum: true,
             dontDelete: false,
-            internal: false,
             value: newNativeFunction(
                 functionPrototype,
                 function* mathWrapper(ctx, _self, args) {
@@ -4072,7 +4020,6 @@ function createIntrinsics(): Intrinsics {
             readOnly: false,
             dontEnum: true,
             dontDelete: false,
-            internal: false,
             value: newNativeFunction(
                 functionPrototype,
                 function* mathWrapper(ctx, _self, args) {
@@ -4088,7 +4035,6 @@ function createIntrinsics(): Intrinsics {
             readOnly: false,
             dontEnum: true,
             dontDelete: false,
-            internal: false,
             value: newNativeFunction(
                 functionPrototype,
                 function* mathWrapper(ctx, _self, args) {
@@ -4112,14 +4058,12 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(functionPrototype, dateUTC, 7),
     });
     date.properties.set("parse", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* dateParse(ctx, _self, args) {
@@ -4134,14 +4078,12 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: date,
     });
     datePrototype.properties.set("toString", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* dateToString(_ctx, self, _args) {
@@ -4181,7 +4123,6 @@ function createIntrinsics(): Intrinsics {
             readOnly: false,
             dontEnum: true,
             dontDelete: false,
-            internal: false,
             value: newNativeFunction(
                 functionPrototype,
                 function* datePrototypeWrapper(ctx, self, args) {
@@ -4216,7 +4157,6 @@ function createIntrinsics(): Intrinsics {
             readOnly: false,
             dontEnum: true,
             dontDelete: false,
-            internal: false,
             value: newNativeFunction(
                 functionPrototype,
                 function* datePrototypeWrapper(ctx, self, args) {
@@ -4240,7 +4180,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* datePrototypeGetYear(_ctx, self, _args) {
@@ -4257,7 +4196,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* datePrototypeToUTCString(_ctx, self, _args) {
@@ -4274,7 +4212,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: newNativeFunction(
             functionPrototype,
             function* datePrototypeSetSeconds(ctx, self, args) {
@@ -4292,7 +4229,6 @@ function createIntrinsics(): Intrinsics {
         readOnly: true,
         dontEnum: true,
         dontDelete: true,
-        internal: false,
         value: datePrototype,
     });
     return {
@@ -4335,7 +4271,6 @@ function createGlobal(intrinsics: Intrinsics): InterpreterObject {
                     readOnly: false,
                     dontEnum: true,
                     dontDelete: false,
-                    internal: false,
                     value: NaN,
                 },
             ],
@@ -4345,7 +4280,6 @@ function createGlobal(intrinsics: Intrinsics): InterpreterObject {
                     readOnly: false,
                     dontEnum: true,
                     dontDelete: false,
-                    internal: false,
                     value: Infinity,
                 },
             ],
@@ -4373,7 +4307,6 @@ function createGlobal(intrinsics: Intrinsics): InterpreterObject {
                     readOnly: false,
                     dontEnum: true,
                     dontDelete: false,
-                    internal: false,
                     value: intrinsics[name],
                 },
             ]),
@@ -5228,7 +5161,6 @@ function defineVariable(ctx: Context, list: VariableDeclaration[]) {
                 readOnly: false,
                 dontEnum: false,
                 dontDelete: true,
-                internal: false,
                 value: undefined,
             });
         }
@@ -5253,14 +5185,12 @@ function* newFunction(ctx: Context, parameters: string[], block: Block): Generat
             readOnly: false,
             dontEnum: true,
             dontDelete: false,
-            internal: false,
             value: func,
         });
         argumentsObject.properties.set("length", {
             readOnly: false,
             dontEnum: true,
             dontDelete: false,
-            internal: false,
             value: args.length,
         });
         const iargToName = new Map<string, string>();
@@ -5286,7 +5216,6 @@ function* newFunction(ctx: Context, parameters: string[], block: Block): Generat
             readOnly: false,
             dontEnum: false,
             dontDelete: true,
-            internal: false,
             value: argumentsObject,
         });
         for (let i = 0; i < parameters.length; i++) {
@@ -5294,7 +5223,6 @@ function* newFunction(ctx: Context, parameters: string[], block: Block): Generat
                 readOnly: false,
                 dontEnum: false,
                 dontDelete: true,
-                internal: false,
                 value: args[i],
             });
             nameToIArg.set(parameters[i]!, String(i));
@@ -5307,7 +5235,6 @@ function* newFunction(ctx: Context, parameters: string[], block: Block): Generat
                 readOnly: false,
                 dontEnum: true,
                 dontDelete: false,
-                internal: false,
                 value: args[i],
             });
         }
@@ -5336,14 +5263,12 @@ function* newFunction(ctx: Context, parameters: string[], block: Block): Generat
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: prototype,
     });
     prototype.properties.set("constructor", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        internal: false,
         value: func,
     });
     func.internalProperties.construct = function* construct(ctx, args) {

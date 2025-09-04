@@ -46,7 +46,7 @@ export const ObjectInspector: React.FC<ObjectInspectorProps> = ({ value, level =
     }
 
     const className = value.internalProperties.class;
-    const properties = Array.from(value.properties.entries()).filter(([, prop]) => !prop.internal);
+    const properties = Array.from(value.properties.entries());
 
     if (properties.length === 0) {
         return (
