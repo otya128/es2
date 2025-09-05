@@ -1737,11 +1737,15 @@ function parseContinueStatement(tokenizer: Tokenizer, state: ParserState): Conti
         throw new UnexpectedTokenError("ContinueStatement", "continue", token);
     }
     if (!state.while && !state.for) {
-        throw new SyntaxError("ContinueStatement", "break statements are only allowed inside while/for", token.start);
+        throw new SyntaxError(
+            "ContinueStatement",
+            "continue statements are only allowed inside while/for",
+            token.start
+        );
     }
     tokenizer.next();
     if (!parseSemicolon(tokenizer)) {
-        throw new UnexpectedTokenError("ContinueStatement", "; or } or LineTerminator", token);
+        throw new UnexpectedTokenError("ContinueStatement", "; or } or LineTerminator", tokenizer.current);
     }
     return {
         type: "continueStatement",
@@ -1760,7 +1764,7 @@ function parseBreakStatement(tokenizer: Tokenizer, state: ParserState): BreakSta
     }
     tokenizer.next();
     if (!parseSemicolon(tokenizer)) {
-        throw new UnexpectedTokenError("BreakStatement", "; or } or LineTerminator", token);
+        throw new UnexpectedTokenError("BreakStatement", "; or } or LineTerminator", tokenizer.current);
     }
     return {
         type: "breakStatement",
@@ -1781,7 +1785,7 @@ function parseReturnStatement(tokenizer: Tokenizer, state: ParserState): ReturnS
     if (!parseSemicolon(tokenizer)) {
         const expression = parseExpression(tokenizer);
         if (!parseSemicolon(tokenizer)) {
-            throw new UnexpectedTokenError("ReturnStatement", "; or } or LineTerminator", token);
+            throw new UnexpectedTokenError("ReturnStatement", "; or } or LineTerminator", tokenizer.current);
         }
         return {
             type: "returnStatement",
@@ -3029,7 +3033,7 @@ function* constructFunction(ctx: Context, args: Value[]): Generator<unknown, Int
         throw new Error("Function: illegal arguments: " + argsStrings.join(","));
     }
     const block = parseStatementList(body, { for: false, while: false, function: true });
-    return yield* newFunction(ctx, parameters, block);
+    return newFunction(ctx, parameters, block);
 }
 
 function isArrayIndex(p: string) {
@@ -5167,7 +5171,7 @@ function defineVariable(ctx: Context, list: VariableDeclaration[]) {
     }
 }
 
-function* newFunction(ctx: Context, parameters: string[], block: Block): Generator<unknown, InterpreterObject> {
+function newFunction(ctx: Context, parameters: string[], block: Block): InterpreterObject {
     function* call(ctx: Context, self: InterpreterObject | null, args: Value[]): Generator<unknown, Value> {
         const scope = {
             parent: ctx.realm.globalScope,
@@ -5298,7 +5302,7 @@ function findActivationObjectScope(scope: Scope): Scope | undefined {
 }
 
 function* defineFunction(ctx: Context, decl: FunctionDeclaration): Generator<unknown, void> {
-    const func = yield* newFunction(ctx, decl.parameters, decl.block);
+    const func = newFunction(ctx, decl.parameters, decl.block);
     yield* putProperty(ctx, findActivationObjectScope(ctx.scope)?.object ?? ctx.realm.globalObject, decl.name, func);
 }
 

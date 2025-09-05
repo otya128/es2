@@ -80,6 +80,7 @@ test("tokenizer", () => {
     expect(filterByValue(tokenize(String.raw`"abc\012v"`))).toStrictEqual(["abc\x0av"]);
     expect(filterByValue(tokenize(String.raw`"abc\x0av"`))).toStrictEqual(["abc\x0av"]);
     expect(filterByValue(tokenize(String.raw`"abc\u000av"`))).toStrictEqual(["abc\x0av"]);
+    expect(filterByValue(tokenize(String.raw`"\i"`))).toStrictEqual(["i"]);
     expect(error(() => filterByValue(tokenize('"')))).toBeTruthy();
     expect(error(() => filterByValue(tokenize('"aaa')))).toBeTruthy();
     expect(filterByValue(tokenize(String.raw`return 1`))).toStrictEqual(["return", 1]);
