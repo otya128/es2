@@ -236,11 +236,14 @@ class UnexpectedTokenError extends Error {
     }
 }
 
-class SyntaxError extends Error {
+class InterpreterSyntaxError extends Error {
     constructor(syntax: string, message: string, position: Position) {
         super(`${syntax}: ${message}, ${position.line}:${position.column}`);
     }
 }
+
+class InterpreterReferenceError extends Error {}
+class InterpreterTypeError extends Error {}
 
 class Reader {
     private source: string;
@@ -1686,13 +1689,13 @@ function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStateme
     } else if (inOrSemicolon.type === "keyword" && inOrSemicolon.value === "in") {
         let forInIntialization: VariableDeclaration | LeftHandSideExpression;
         if (initialization == null) {
-            throw new SyntaxError("ForStatement", "VariableDeclaration", tokenizer.current.start);
+            throw new InterpreterSyntaxError("ForStatement", "VariableDeclaration", tokenizer.current.start);
         } else if (initialization.type === "variableStatement") {
             if (
                 initialization.variableDeclarationList[0] == null ||
                 initialization.variableDeclarationList.length !== 1
             ) {
-                throw new SyntaxError("ForStatement", "VariableDeclaration", tokenizer.current.start);
+                throw new InterpreterSyntaxError("ForStatement", "VariableDeclaration", tokenizer.current.start);
             }
             forInIntialization = initialization.variableDeclarationList[0];
         } else {
@@ -1707,7 +1710,7 @@ function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStateme
                     forInIntialization = initialization;
                     break;
                 default:
-                    throw new SyntaxError("ForStatement", "LeftHandSideExpression", tokenizer.current.start);
+                    throw new InterpreterSyntaxError("ForStatement", "LeftHandSideExpression", tokenizer.current.start);
             }
         }
         tokenizer.next();
@@ -1737,7 +1740,7 @@ function parseContinueStatement(tokenizer: Tokenizer, state: ParserState): Conti
         throw new UnexpectedTokenError("ContinueStatement", "continue", token);
     }
     if (!state.while && !state.for) {
-        throw new SyntaxError(
+        throw new InterpreterSyntaxError(
             "ContinueStatement",
             "continue statements are only allowed inside while/for",
             token.start
@@ -1760,7 +1763,11 @@ function parseBreakStatement(tokenizer: Tokenizer, state: ParserState): BreakSta
         throw new UnexpectedTokenError("BreakStatement", "break", token);
     }
     if (!state.while && !state.for) {
-        throw new SyntaxError("BreakStatement", "break statements are only allowed inside while/for", token.start);
+        throw new InterpreterSyntaxError(
+            "BreakStatement",
+            "break statements are only allowed inside while/for",
+            token.start
+        );
     }
     tokenizer.next();
     if (!parseSemicolon(tokenizer)) {
@@ -1779,7 +1786,11 @@ function parseReturnStatement(tokenizer: Tokenizer, state: ParserState): ReturnS
         throw new UnexpectedTokenError("ReturnStatement", "return", token);
     }
     if (!state.function) {
-        throw new SyntaxError("ReturnStatement", "return statements are only allowed inside functions", token.start);
+        throw new InterpreterSyntaxError(
+            "ReturnStatement",
+            "return statements are only allowed inside functions",
+            token.start
+        );
     }
     tokenizer.next();
     if (!parseSemicolon(tokenizer)) {
@@ -2548,6 +2559,7 @@ type Reference = {
     name: string;
     activation: boolean;
 };
+
 type RefOrValue = Value | Reference;
 
 function isReference(ref: RefOrValue): ref is Reference {
@@ -2558,6 +2570,22 @@ function isReference(ref: RefOrValue): ref is Reference {
         return true;
     }
     return false;
+}
+
+export function escapeString(s: string): string {
+    return (
+        '"' +
+        s.replaceAll(/["\n\r\\]/gs, (sub) => {
+            switch (sub) {
+                case "\n":
+                    return "\\n";
+                case "\r":
+                    return "\\r";
+            }
+            return "\\" + sub;
+        }) +
+        '"'
+    );
 }
 
 export type Property = {
@@ -2756,17 +2784,17 @@ function toObject(intrinsics: Intrinsics, value: Value) {
         case "boolean":
             return newBooleanObject(intrinsics.BooleanPrototype, value);
         case "undefined":
-            throw new TypeError();
+            throw new InterpreterTypeError();
         case "object":
             if (value === null) {
-                throw new TypeError();
+                throw new InterpreterTypeError();
             }
             return value;
         case "bigint":
         case "symbol":
         case "function":
         default:
-            throw new TypeError();
+            throw new InterpreterTypeError();
     }
 }
 
@@ -2930,7 +2958,7 @@ function* defaultValue(
             }
         }
     }
-    throw new TypeError("ToPrimitive failed");
+    throw new InterpreterTypeError("ToPrimitive failed");
 }
 
 export function* toPrimitive(
@@ -3303,7 +3331,9 @@ function* arrayPrototypeSort(ctx: Context, self: InterpreterObject | null, args:
     const comparefn = args[0];
     const call = isObject(comparefn) ? comparefn.internalProperties.call : undefined;
     if (comparefn !== undefined && call == null) {
-        throw new TypeError(`Array.prototype.sort: comparefn is not function: ${yield* toString(ctx, comparefn)}`);
+        throw new InterpreterTypeError(
+            `Array.prototype.sort: comparefn is not function: ${yield* toString(ctx, comparefn)}`
+        );
     }
     const length = toUint32(yield* toNumber(ctx, yield* getProperty(ctx, self, "length")));
     yield* mergeSort(ctx, call, self, 0, length);
@@ -3468,7 +3498,7 @@ function createIntrinsics(): Intrinsics {
             function* functionToString(_ctx, self, _args) {
                 // FIXME: improve function detection
                 if (self?.internalProperties.call == null) {
-                    throw new TypeError("this must be Function");
+                    throw new InterpreterTypeError("this must be Function");
                 }
                 // FIXME
                 return "Function";
@@ -3493,7 +3523,7 @@ function createIntrinsics(): Intrinsics {
                 // undefined => [object Undefined]
                 // null => [object Null]
                 if (!isObject(self)) {
-                    throw new TypeError();
+                    throw new InterpreterTypeError();
                 }
                 return `[object ${self.internalProperties.class}]`;
             },
@@ -3558,7 +3588,7 @@ function createIntrinsics(): Intrinsics {
             functionPrototype,
             function* stringToString(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "string") {
-                    throw new TypeError("String.prototype.toString: this must be String object");
+                    throw new InterpreterTypeError("String.prototype.toString: this must be String object");
                 }
                 return self.internalProperties.value;
             },
@@ -3573,7 +3603,7 @@ function createIntrinsics(): Intrinsics {
             functionPrototype,
             function* stringValueOf(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "string") {
-                    throw new TypeError("String.prototype.valueOf: this must be String object");
+                    throw new InterpreterTypeError("String.prototype.valueOf: this must be String object");
                 }
                 return self.internalProperties.value;
             },
@@ -3762,7 +3792,7 @@ function createIntrinsics(): Intrinsics {
             function* numberToString(ctx, self, args) {
                 const value = getNumberObjectValue(self);
                 if (value == null) {
-                    throw new TypeError("Number.prototype.toString: this must be Number object");
+                    throw new InterpreterTypeError("Number.prototype.toString: this must be Number object");
                 }
                 const radix = args[0] === undefined ? 10 : yield* toNumber(ctx, args[0]);
                 // throws RnageError
@@ -3780,7 +3810,7 @@ function createIntrinsics(): Intrinsics {
             function* numberValueOf(_ctx, self, _args) {
                 const value = getNumberObjectValue(self);
                 if (value == null) {
-                    throw new TypeError("Number.prototype.valueOf: this must be Number object");
+                    throw new InterpreterTypeError("Number.prototype.valueOf: this must be Number object");
                 }
                 return value;
             },
@@ -3822,7 +3852,7 @@ function createIntrinsics(): Intrinsics {
             functionPrototype,
             function* booleanToString(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "boolean") {
-                    throw new TypeError("Boolean.prototype.toString: this must be Boolean object");
+                    throw new InterpreterTypeError("Boolean.prototype.toString: this must be Boolean object");
                 }
                 const value = self.internalProperties.value;
                 return value ? "true" : "false";
@@ -3838,7 +3868,7 @@ function createIntrinsics(): Intrinsics {
             functionPrototype,
             function* booleanValueOf(_ctx, self, _args) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "boolean") {
-                    throw new TypeError("Boolean.prototype.valueOf: this must be Boolean object");
+                    throw new InterpreterTypeError("Boolean.prototype.valueOf: this must be Boolean object");
                 }
                 return self.internalProperties.value;
             },
@@ -4093,7 +4123,7 @@ function createIntrinsics(): Intrinsics {
             function* dateToString(_ctx, self, _args) {
                 const value = getDateObjectValue(self);
                 if (value == null) {
-                    throw new TypeError("Date.prototype.toString: this must be Date object");
+                    throw new InterpreterTypeError("Date.prototype.toString: this must be Date object");
                 }
                 return new Date(value).toString();
             },
@@ -4132,7 +4162,7 @@ function createIntrinsics(): Intrinsics {
                 function* datePrototypeWrapper(ctx, self, args) {
                     const value = getDateObjectValue(self);
                     if (value == null) {
-                        throw new TypeError(`Date.prototype.${f}: this must be Date object`);
+                        throw new InterpreterTypeError(`Date.prototype.${f}: this must be Date object`);
                     }
                     return new Date(value)[f]();
                 },
@@ -4166,7 +4196,7 @@ function createIntrinsics(): Intrinsics {
                 function* datePrototypeWrapper(ctx, self, args) {
                     const value = getDateObjectValue(self);
                     if (value == null || !isObject(self)) {
-                        throw new TypeError(`Date.prototype.${f}: this must be Date object`);
+                        throw new InterpreterTypeError(`Date.prototype.${f}: this must be Date object`);
                     }
                     args.length = Math.min(args.length, length);
                     let numbers: number[] = [];
@@ -4189,7 +4219,7 @@ function createIntrinsics(): Intrinsics {
             function* datePrototypeGetYear(_ctx, self, _args) {
                 const value = getDateObjectValue(self);
                 if (value == null) {
-                    throw new TypeError(`Date.prototype.getYear: this must be Date object`);
+                    throw new InterpreterTypeError(`Date.prototype.getYear: this must be Date object`);
                 }
                 return new Date(value).getFullYear() - 1900;
             },
@@ -4205,7 +4235,7 @@ function createIntrinsics(): Intrinsics {
             function* datePrototypeToUTCString(_ctx, self, _args) {
                 const value = getDateObjectValue(self);
                 if (value == null) {
-                    throw new TypeError(`Date.prototype.toGMTString: this must be Date object`);
+                    throw new InterpreterTypeError(`Date.prototype.toGMTString: this must be Date object`);
                 }
                 return new Date(value).toUTCString();
             },
@@ -4221,7 +4251,7 @@ function createIntrinsics(): Intrinsics {
             function* datePrototypeSetSeconds(ctx, self, args) {
                 const value = getDateObjectValue(self);
                 if (value == null) {
-                    throw new TypeError(`Date.prototype.setSeconds: this must be Date object`);
+                    throw new InterpreterTypeError(`Date.prototype.setSeconds: this must be Date object`);
                 }
                 const year = yield* toNumber(ctx, args[0]);
                 return new Date(value).setFullYear(year);
@@ -4367,14 +4397,14 @@ function* referenceGetValue(ctx: Context, reference: RefOrValue): Generator<unkn
         return reference;
     }
     if (reference.baseObject == null) {
-        throw new ReferenceError(`${reference.name}`);
+        throw new InterpreterReferenceError(`${reference.name} is not defined`);
     }
     return yield* getProperty(ctx, reference.baseObject, reference.name);
 }
 
 function* referencePutValue(ctx: Context, reference: RefOrValue, value: Value): Generator<unknown, unknown> {
     if (!isReference(reference)) {
-        throw new ReferenceError("not reference");
+        throw new InterpreterReferenceError("not reference");
     }
     yield* putProperty(ctx, reference.baseObject ?? ctx.realm.globalObject, reference.name, value);
     return;
@@ -4570,8 +4600,12 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
         case "groupingOperator":
             return yield* evaluateExpression(ctx, expression.expression);
         case "memberOperator": {
-            const left = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left));
+            const ref = yield* evaluateExpression(ctx, expression.left);
+            const left = yield* referenceGetValue(ctx, ref);
             if ("name" in expression) {
+                if (left == null) {
+                    throw new InterpreterReferenceError(`can't access property ${expression.name}`);
+                }
                 return {
                     baseObject: toObject(ctx.realm.intrinsics, left),
                     name: expression.name,
@@ -4579,9 +4613,15 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                 };
             } else {
                 const right = yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right));
+                if (left == null) {
+                    const name = yield* toString(ctx, right);
+                    throw new InterpreterReferenceError(`can't access property ${escapeString(name)}`);
+                }
+                const baseObject = toObject(ctx.realm.intrinsics, left);
+                const name = yield* toString(ctx, right);
                 return {
-                    baseObject: toObject(ctx.realm.intrinsics, left),
-                    name: yield* toString(ctx, right),
+                    baseObject,
+                    name,
                     activation: false,
                 };
             }
@@ -4593,15 +4633,15 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                 args = yield* evaluateList(ctx, expression.argumentList);
             }
             if (!isObject(value)) {
-                throw new TypeError("!isObject");
+                throw new InterpreterTypeError("!isObject");
             }
             const construct = value.internalProperties.construct;
             if (!construct) {
-                throw new TypeError("not constructable");
+                throw new InterpreterTypeError("not constructable");
             }
             const obj = yield* construct(ctx, args);
             if (!isObject(obj)) {
-                throw new TypeError("[[Construct]] result is not a object");
+                throw new InterpreterTypeError("[[Construct]] result is not a object");
             }
             return obj;
         }
@@ -4610,11 +4650,11 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             const args = yield* evaluateList(ctx, expression.argumentList);
             const value = yield* referenceGetValue(ctx, valueRef);
             if (!isObject(value)) {
-                throw new TypeError("not Object");
+                throw new InterpreterTypeError("not Object");
             }
             const call = value.internalProperties.call;
             if (call == null) {
-                throw new TypeError("not callable");
+                throw new InterpreterTypeError("not callable");
             }
             let self = isReference(valueRef) && !valueRef.activation ? valueRef.baseObject : null;
             return yield* call(ctx, self, args);
@@ -4639,7 +4679,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             const ref = yield* evaluateExpression(ctx, expression.expression);
             if (!isReference(ref)) {
                 // newer ES returns true
-                throw new ReferenceError("value can not be deleted");
+                throw new InterpreterReferenceError("value can not be deleted");
             }
             if (!isObject(ref.baseObject)) {
                 return true;

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { tokenize, Token, parse, SourceElement, Expression, Statement, Program, runAsync } from ".";
+import { tokenize, Token, parse, SourceElement, Expression, Statement, Program, runAsync, escapeString } from ".";
 
 function filterByValue(tokens: Iterable<Token>): (string | null | boolean | number)[] {
     return [...tokens].map((x) => x.value);
@@ -4721,4 +4721,23 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: "[object Object]",
     });
+});
+
+test("error message", async () => {
+    await expect(runAsync("hoge")).rejects.toThrowError("hoge is not defined");
+    await expect(runAsync("Object.undef.a")).rejects.toThrowError("can't access property a");
+    await expect(runAsync("Object.prototype.b.a")).rejects.toThrowError("can't access property a");
+    await expect(runAsync("Object.undef['a']")).rejects.toThrowError('can\'t access property "a"');
+    await expect(runAsync("Object.undef[1]")).rejects.toThrowError('can\'t access property "1"');
+    await expect(runAsync("this.hoge.fuga")).rejects.toThrowError("can't access property fuga");
+});
+
+test("escapeString", () => {
+    expect(escapeString('"')).toBe(String.raw`"\""`);
+    expect(escapeString("\n")).toBe(String.raw`"\n"`);
+    expect(escapeString("\\")).toBe(String.raw`"\\"`);
+    expect(escapeString("\\n")).toBe(String.raw`"\\n"`);
+    expect(escapeString("\\\n")).toBe(String.raw`"\\\n"`);
+    expect(escapeString("\r")).toBe(String.raw`"\r"`);
+    expect(escapeString("a\\\nb")).toBe(String.raw`"a\\\nb"`);
 });
