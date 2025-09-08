@@ -141,10 +141,17 @@ const punctuators = [
 type Punctuators = (typeof punctuators)[number];
 type Keywords = (typeof keywords)[number];
 type FutureReservedWords = (typeof futureReservedWords)[number];
+
+export type SourceInfo = {
+    name: string;
+    source?: string;
+};
+
 export type Position = {
     index: number;
     line: number;
     column: number;
+    sourceInfo: SourceInfo | undefined;
 };
 
 export type Keyword = {
@@ -253,7 +260,8 @@ class Reader {
     private index: number;
     private line: number;
     private column: number;
-    constructor(source: string) {
+    private sourceInfo: SourceInfo | undefined;
+    constructor(source: string, sourceInfo?: SourceInfo) {
         this.source = source;
         this.index = 0;
         this.line = 1;
@@ -261,12 +269,14 @@ class Reader {
         this.prevIndex = 0;
         this.prevLine = 1;
         this.prevColumn = 1;
+        this.sourceInfo = sourceInfo;
     }
     get prevPosition(): Position {
         return {
             index: this.prevIndex,
             line: this.prevLine,
             column: this.prevColumn,
+            sourceInfo: this.sourceInfo,
         };
     }
     get position(): Position {
@@ -274,6 +284,7 @@ class Reader {
             index: this.index,
             line: this.line,
             column: this.column,
+            sourceInfo: this.sourceInfo,
         };
     }
     get current(): string {
@@ -308,13 +319,13 @@ class Reader {
     }
 }
 
-export function* tokenize(source: string): Generator<Token | LineTerminator, EndToken> {
-    const reader = new Reader(source);
+export function* tokenize(source: string, sourceInfo?: SourceInfo): Generator<Token | LineTerminator, EndToken> {
+    const reader = new Reader(source, sourceInfo);
     while (!reader.eof) {
         const start = reader.position;
         const char = reader.current;
         if (isIdentifierLetter(char)) {
-            yield parseReservedWordOrToken(reader);
+            yield parseReservedWordOrIdentifier(reader);
             continue;
         }
         if (char === "=") {
@@ -512,7 +523,7 @@ function parseOctalIntegerLiteral(reader: Reader, start: Position): NumericLiter
     return { type: "numericLiteral", value: parseInt(value, 8), start, end: reader.prevPosition };
 }
 
-function parseReservedWordOrToken(reader: Reader): ReservedWord | Token {
+function parseReservedWordOrIdentifier(reader: Reader): ReservedWord | Identifier {
     const start = reader.position;
     while (!reader.eof) {
         const char = reader.next();
@@ -1240,13 +1251,15 @@ function visitStatement(statement: Statement, visitor: (statement: Statement) =>
 class Tokenizer {
     private iterator: Generator<Token, EndToken>;
     private _current: Token;
-    private _prevPosition: Position = {
-        index: 0,
-        line: 1,
-        column: 1,
-    };
-    constructor(source: string) {
-        this.iterator = tokenize(source);
+    private _prevPosition: Position;
+    constructor(source: string, sourceInfo?: SourceInfo) {
+        this.iterator = tokenize(source, sourceInfo);
+        this._prevPosition = {
+            index: 0,
+            line: 1,
+            column: 1,
+            sourceInfo,
+        };
         while (true) {
             this._current = this.iterator.next().value;
             if (this._current.type !== "lineTerminator") {
@@ -1277,13 +1290,13 @@ type ParserState = {
     function: boolean;
 };
 
-export function parse(source: string): Program {
-    const tokenizer = new Tokenizer(source);
+export function parse(source: string, sourceInfo?: SourceInfo): Program {
+    const tokenizer = new Tokenizer(source, sourceInfo);
     return parseProgram(tokenizer);
 }
 
-export function parseStatementList(source: string, state: ParserState): Block {
-    const tokenizer = new Tokenizer(source);
+export function parseStatementList(source: string, state: ParserState, sourceInfo?: SourceInfo): Block {
+    const tokenizer = new Tokenizer(source, sourceInfo);
     const begin = tokenizer.current;
     const statementList: Statement[] = [];
     while (true) {
@@ -3060,7 +3073,11 @@ function* constructFunction(ctx: Context, args: Value[]): Generator<unknown, Int
     if (tokenizer.current.type !== "end") {
         throw new Error("Function: illegal arguments: " + argsStrings.join(","));
     }
-    const block = parseStatementList(body, { for: false, while: false, function: true });
+    const block = parseStatementList(
+        body,
+        { for: false, while: false, function: true },
+        { name: "anonymous", source: body }
+    );
     return newFunction(ctx, parameters, block);
 }
 
@@ -3954,7 +3971,7 @@ function createIntrinsics(): Intrinsics {
                 return args[0];
             }
             const source = args[0];
-            const completion = yield* run(source, ctx);
+            const completion = yield* run(source, ctx, { name: "eval", source });
             if (completion.type === "normalCompletion" && completion.hasValue) {
                 return completion.value;
             }
@@ -5367,8 +5384,8 @@ export function createGlobalContext(): Context {
     return context;
 }
 
-function* run(source: string, context: Context): Generator<unknown, Completion> {
-    const program = parse(source);
+function* run(source: string, context: Context, sourceInfo?: SourceInfo): Generator<unknown, Completion> {
+    const program = parse(source, sourceInfo);
     let completion: Completion = {
         type: "normalCompletion",
         hasValue: false,
@@ -5406,8 +5423,8 @@ function* run(source: string, context: Context): Generator<unknown, Completion> 
     return completion;
 }
 
-export async function runInContext(source: string, context: Context): Promise<Completion> {
-    const iter = run(source, context);
+export async function runInContext(source: string, context: Context, sourceInfo?: SourceInfo): Promise<Completion> {
+    const iter = run(source, context, sourceInfo);
     let lastResult: any = undefined;
     while (true) {
         const { value, done } = iter.next(lastResult);
@@ -5422,6 +5439,6 @@ export async function runInContext(source: string, context: Context): Promise<Co
     }
 }
 
-export function runAsync(source: string): Promise<Completion> {
-    return runInContext(source, createGlobalContext());
+export function runAsync(source: string, sourceInfo?: SourceInfo): Promise<Completion> {
+    return runInContext(source, createGlobalContext(), sourceInfo);
 }
