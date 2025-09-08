@@ -295,13 +295,12 @@ class Reader {
         this.prevLine = this.line;
         this.prevColumn = this.column;
         this.column++;
-        this.index++;
-        const char = this.source.charAt(this.index);
-        if (char === "\n") {
-            this.column = 0;
+        if (this.source.charAt(this.index) === "\n") {
+            this.column = 1;
             this.line++;
         }
-        return char;
+        this.index++;
+        return this.source.charAt(this.index);
     }
     consume(count: number): void {
         for (let i = 0; i < count; i++) {
@@ -373,7 +372,7 @@ export function* tokenize(source: string, sourceInfo?: SourceInfo): Generator<To
             if (chars === "/*") {
                 reader.next();
                 if (parseMultiLineComment(reader)) {
-                    yield { type: "lineTerminator", value: "\n", start, end: reader.position };
+                    yield { type: "lineTerminator", value: "\n", start, end: reader.prevPosition };
                 }
                 continue;
             } else if (chars === "//") {
@@ -389,7 +388,7 @@ export function* tokenize(source: string, sourceInfo?: SourceInfo): Generator<To
         }
         if (isLineTerminator(char)) {
             reader.next();
-            yield { type: "lineTerminator", value: "\n", start, end: reader.position };
+            yield { type: "lineTerminator", value: "\n", start, end: reader.prevPosition };
             continue;
         }
         if (isWhiteSpace(char)) {

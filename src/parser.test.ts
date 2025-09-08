@@ -125,6 +125,94 @@ test("tokenizer", () => {
         )
     ).toStrictEqual(["return", "\n", 1]);
     expect(filterByValue(tokenize("a = 1; a |= 4;"))).toStrictEqual(["a", "=", 1, ";", "a", "|=", 4, ";"]);
+    expect([...tokenize(String.raw`return`)]).toMatchObject([
+        {
+            type: "keyword",
+            value: "return",
+            start: {
+                index: 0,
+                line: 1,
+                column: 1,
+                sourceInfo: undefined,
+            },
+            end: {
+                index: 5,
+                line: 1,
+                column: 6,
+                sourceInfo: undefined,
+            },
+        },
+    ] satisfies Token[]);
+    expect([
+        ...tokenize(String.raw`
+return/*
+*/hoge`),
+    ]).toMatchObject([
+        {
+            type: "lineTerminator",
+            value: "\n",
+            start: {
+                index: 0,
+                line: 1,
+                column: 1,
+                sourceInfo: undefined,
+            },
+            end: {
+                index: 0,
+                line: 1,
+                column: 1,
+                sourceInfo: undefined,
+            },
+        },
+        {
+            type: "keyword",
+            value: "return",
+            start: {
+                index: 1,
+                line: 2,
+                column: 1,
+                sourceInfo: undefined,
+            },
+            end: {
+                index: 6,
+                line: 2,
+                column: 6,
+                sourceInfo: undefined,
+            },
+        },
+        {
+            type: "lineTerminator",
+            value: "\n",
+            start: {
+                index: 7,
+                line: 2,
+                column: 7,
+                sourceInfo: undefined,
+            },
+            end: {
+                index: 11,
+                line: 3,
+                column: 2,
+                sourceInfo: undefined,
+            },
+        },
+        {
+            type: "identifier",
+            value: "hoge",
+            start: {
+                index: 12,
+                line: 3,
+                column: 3,
+                sourceInfo: undefined,
+            },
+            end: {
+                index: 15,
+                line: 3,
+                column: 6,
+                sourceInfo: undefined,
+            },
+        },
+    ] satisfies Token[]);
 });
 
 function omitPosition(p: any): any {
@@ -4842,7 +4930,7 @@ test("stack trace (eval)", async () => {
         String.raw`/*1*/function f() {
 /*2*/capture();
 /*3*/}
-/*4*/eval(";\nf()")`,
+/*4*/eval("\nf()")`,
         context,
         { name: "test.js" }
     );
@@ -4872,7 +4960,7 @@ test("stack trace (anon)", async () => {
         String.raw`/*1*/function f() {
 /*2*/capture();
 /*3*/}
-/*4*/Function(";\nf()")()`,
+/*4*/Function("\nf()")()`,
         context,
         { name: "test.js" }
     );
