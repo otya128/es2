@@ -1,5 +1,20 @@
 import { expect, test } from "vitest";
-import { tokenize, Token, parse, SourceElement, Expression, Statement, Program, runAsync, escapeString } from ".";
+import {
+    tokenize,
+    Token,
+    parse,
+    SourceElement,
+    Expression,
+    Statement,
+    Program,
+    runAsync,
+    escapeString,
+    createGlobalContext,
+    newNativeFunction,
+    runInContext,
+    walkStackTrace,
+    StackTraceEntry,
+} from ".";
 
 function filterByValue(tokens: Iterable<Token>): (string | null | boolean | number)[] {
     return [...tokens].map((x) => x.value);
@@ -4730,6 +4745,138 @@ test("error message", async () => {
     await expect(runAsync("Object.undef['a']")).rejects.toThrowError('can\'t access property "a"');
     await expect(runAsync("Object.undef[1]")).rejects.toThrowError('can\'t access property "1"');
     await expect(runAsync("this.hoge.fuga")).rejects.toThrowError("can't access property fuga");
+});
+
+function stackTraceToString(s: StackTraceEntry): string {
+    return `${s.name} (${s.start.sourceInfo?.name}:${s.start.line})`;
+}
+
+test("stack trace", async () => {
+    const context = createGlobalContext();
+    const globalObject = context.realm.globalObject;
+    const { FunctionPrototype } = context.realm.intrinsics;
+    let captured: string[] = [];
+    const capture = newNativeFunction(
+        FunctionPrototype,
+        function* (ctx, _self, _args, caller) {
+            captured = walkStackTrace(ctx, caller).map(stackTraceToString);
+            return "ok";
+        },
+        0
+    );
+    globalObject.properties.set("capture", {
+        readOnly: false,
+        dontEnum: false,
+        dontDelete: false,
+        value: capture,
+    });
+    await runInContext(
+        String.raw`/*1*/function f() {
+/*2*/    new Array(1, 2).sort(ff);
+/*3*/}
+/*4*/function g() {
+/*5*/    with(new Object){new f;}
+/*6*/}
+/*7*/g();
+/*8*/function ff() { capture(); return 0; }
+/*9*/`,
+        context,
+        { name: "test.js" }
+    );
+    expect(captured).toStrictEqual(["ff (test.js:8)", "f (test.js:2)", "g (test.js:5)", "global (test.js:7)"]);
+});
+
+test("stack trace (toString)", async () => {
+    const context = createGlobalContext();
+    const globalObject = context.realm.globalObject;
+    const { FunctionPrototype } = context.realm.intrinsics;
+    let captured: string[] = [];
+    const capture = newNativeFunction(
+        FunctionPrototype,
+        function* (ctx, _self, _args, caller) {
+            captured = walkStackTrace(ctx, caller).map(stackTraceToString);
+            return "ok";
+        },
+        0
+    );
+    globalObject.properties.set("capture", {
+        readOnly: false,
+        dontEnum: false,
+        dontDelete: false,
+        value: capture,
+    });
+    await runInContext(
+        String.raw`/*1*/
+/*2*/function toString() {
+/*3*/    capture();
+/*4*/}
+/*5*/var o = new Object;
+/*6*/o.toString = toString;
+/*7*/""+o;`,
+        context,
+        { name: "test.js" }
+    );
+    expect(captured).toStrictEqual(["toString (test.js:3)", "global (test.js:7)"]);
+});
+
+test("stack trace (eval)", async () => {
+    const context = createGlobalContext();
+    const globalObject = context.realm.globalObject;
+    const { FunctionPrototype } = context.realm.intrinsics;
+    let captured: string[] = [];
+    const capture = newNativeFunction(
+        FunctionPrototype,
+        function* (ctx, _self, _args, caller) {
+            captured = walkStackTrace(ctx, caller).map(stackTraceToString);
+            return "ok";
+        },
+        0
+    );
+    globalObject.properties.set("capture", {
+        readOnly: false,
+        dontEnum: false,
+        dontDelete: false,
+        value: capture,
+    });
+    await runInContext(
+        String.raw`/*1*/function f() {
+/*2*/capture();
+/*3*/}
+/*4*/eval(";\nf()")`,
+        context,
+        { name: "test.js" }
+    );
+    expect(captured).toStrictEqual(["f (test.js:2)", "eval code (eval code:2)", "global (test.js:4)"]);
+});
+
+test("stack trace (anon)", async () => {
+    const context = createGlobalContext();
+    const globalObject = context.realm.globalObject;
+    const { FunctionPrototype } = context.realm.intrinsics;
+    let captured: string[] = [];
+    const capture = newNativeFunction(
+        FunctionPrototype,
+        function* (ctx, _self, _args, caller) {
+            captured = walkStackTrace(ctx, caller).map(stackTraceToString);
+            return "ok";
+        },
+        0
+    );
+    globalObject.properties.set("capture", {
+        readOnly: false,
+        dontEnum: false,
+        dontDelete: false,
+        value: capture,
+    });
+    await runInContext(
+        String.raw`/*1*/function f() {
+/*2*/capture();
+/*3*/}
+/*4*/Function(";\nf()")()`,
+        context,
+        { name: "test.js" }
+    );
+    expect(captured).toStrictEqual(["f (test.js:2)", "anonymous (anonymous:2)", "global (test.js:4)"]);
 });
 
 test("escapeString", () => {

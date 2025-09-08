@@ -32,8 +32,8 @@ export function setupConsole(context: Context, onLog: (value: Value) => void) {
         dontDelete: false,
         value: newNativeFunction(
             context.realm.intrinsics.FunctionPrototype,
-            function* (ctx, _self, args) {
-                const ms = yield* toNumber(ctx, args[0]);
+            function* (ctx, _self, args, caller) {
+                const ms = yield* toNumber(ctx, args[0], caller);
                 return yield new Promise((resolve) => {
                     setTimeout(() => resolve("slept"), ms);
                 });
