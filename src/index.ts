@@ -249,8 +249,27 @@ class InterpreterSyntaxError extends Error {
     }
 }
 
-class InterpreterReferenceError extends Error {}
-class InterpreterTypeError extends Error {}
+function stackTraceToString(s: StackTraceEntry): string {
+    return `${s.name} (${s.start.sourceInfo?.name}:${s.start.line})`;
+}
+
+class InterpreterReferenceError extends Error {
+    stackTrace: StackTraceEntry[];
+    constructor(message: string, context: Context, caller: Caller) {
+        const stackTrace = walkStackTrace(context, caller);
+        super(`${message}\n${stackTrace.map(stackTraceToString).join("\n")}`);
+        this.stackTrace = stackTrace;
+    }
+}
+
+class InterpreterTypeError extends Error {
+    stackTrace: StackTraceEntry[];
+    constructor(message: string, context: Context, caller: Caller) {
+        const stackTrace = walkStackTrace(context, caller);
+        super(`${message}\n${stackTrace.map(stackTraceToString).join("\n")}`);
+        this.stackTrace = stackTrace;
+    }
+}
 
 class Reader {
     private source: string;
@@ -2842,7 +2861,7 @@ export function newObject(prototype: InterpreterObject): InterpreterObject {
     };
 }
 
-function toObject(intrinsics: Intrinsics, value: Value) {
+function toObject(intrinsics: Intrinsics, value: Value, ctx: Context, caller: Caller) {
     switch (typeof value) {
         case "string":
             return newStringObject(intrinsics.StringPrototype, value);
@@ -2851,17 +2870,17 @@ function toObject(intrinsics: Intrinsics, value: Value) {
         case "boolean":
             return newBooleanObject(intrinsics.BooleanPrototype, value);
         case "undefined":
-            throw new InterpreterTypeError();
+            throw new InterpreterTypeError("failed to convert undefined to object", ctx, caller);
         case "object":
             if (value === null) {
-                throw new InterpreterTypeError();
+                throw new InterpreterTypeError("failed to convert null to object", ctx, caller);
             }
             return value;
         case "bigint":
         case "symbol":
         case "function":
         default:
-            throw new InterpreterTypeError();
+            throw new Error("unreachable");
     }
 }
 
@@ -3027,7 +3046,7 @@ function* defaultValue(
             }
         }
     }
-    throw new InterpreterTypeError("ToPrimitive failed");
+    throw new InterpreterTypeError("failed to convert object to primitive type", ctx, caller);
 }
 
 export function* toPrimitive(
@@ -3130,11 +3149,16 @@ function* constructFunction(ctx: Context, args: Value[], caller: Caller): Genera
     if (tokenizer.current.type !== "end") {
         throw new Error("Function: illegal arguments: " + argsStrings.join(","));
     }
-    const block = parseStatementList(
-        body,
-        { for: false, while: false, function: true },
-        { name: "anonymous", source: body }
-    );
+    let block: Block;
+    try {
+        block = parseStatementList(
+            body,
+            { for: false, while: false, function: true },
+            { name: "anonymous", source: body }
+        );
+    } catch (e) {
+        throw new InterpreterTypeError(`Function: failed to parse function body: ${e}`, ctx, caller); // FIXME
+    }
     return newFunction(ctx, "anonymous", parameters, block);
 }
 
@@ -3425,9 +3449,7 @@ function* arrayPrototypeSort(
     const comparefn = args[0];
     const call = isObject(comparefn) ? comparefn.internalProperties.call : undefined;
     if (comparefn !== undefined && call == null) {
-        throw new InterpreterTypeError(
-            `Array.prototype.sort: comparefn is not function: ${yield* toString(ctx, comparefn, caller)}`
-        );
+        throw new InterpreterTypeError(`Array.prototype.sort: comparefn is not function`, ctx, caller);
     }
     const length = toUint32(yield* toNumber(ctx, yield* getProperty(ctx, self, "length", caller), caller));
     yield* mergeSort(ctx, call, self, 0, length, caller);
@@ -3506,13 +3528,13 @@ function createIntrinsics(): Intrinsics {
             class: "Function",
             value: undefined,
             prototype: functionPrototype,
-            *call(ctx, _self, args) {
+            *call(ctx, _self, args, caller) {
                 if (args[0] == null) {
                     return newObject(ctx.realm.intrinsics.ObjectPrototype);
                 }
-                return toObject(ctx.realm.intrinsics, args[0]);
+                return toObject(ctx.realm.intrinsics, args[0], ctx, caller);
             },
-            *construct(ctx, args) {
+            *construct(ctx, args, caller) {
                 const o = args[0];
                 if (o == null) {
                     return newObject(ctx.realm.intrinsics.ObjectPrototype);
@@ -3521,7 +3543,7 @@ function createIntrinsics(): Intrinsics {
                     return o;
                 }
                 if (isPrimitive(o)) {
-                    return toObject(ctx.realm.intrinsics, o);
+                    return toObject(ctx.realm.intrinsics, o, ctx, caller);
                 }
             },
         },
@@ -3589,10 +3611,10 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         value: newNativeFunction(
             functionPrototype,
-            function* functionToString(_ctx, self, _args) {
+            function* functionToString(ctx, self, _args, caller) {
                 // FIXME: improve function detection
                 if (self?.internalProperties.call == null) {
-                    throw new InterpreterTypeError("this must be Function");
+                    throw new InterpreterTypeError("this must be Function", ctx, caller);
                 }
                 // FIXME
                 return "Function";
@@ -3612,12 +3634,12 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         value: newNativeFunction(
             functionPrototype,
-            function* objectToString(_ctx, self, _args) {
+            function* objectToString(ctx, self, _args, caller) {
                 // newer ES:
                 // undefined => [object Undefined]
                 // null => [object Null]
                 if (!isObject(self)) {
-                    throw new InterpreterTypeError();
+                    throw new InterpreterTypeError("Object.prototype.toString: this must be object", ctx, caller);
                 }
                 return `[object ${self.internalProperties.class}]`;
             },
@@ -3680,9 +3702,13 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         value: newNativeFunction(
             functionPrototype,
-            function* stringToString(_ctx, self, _args) {
+            function* stringToString(ctx, self, _args, caller) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "string") {
-                    throw new InterpreterTypeError("String.prototype.toString: this must be String object");
+                    throw new InterpreterTypeError(
+                        "String.prototype.toString: this must be String object",
+                        ctx,
+                        caller
+                    );
                 }
                 return self.internalProperties.value;
             },
@@ -3695,9 +3721,9 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         value: newNativeFunction(
             functionPrototype,
-            function* stringValueOf(_ctx, self, _args) {
+            function* stringValueOf(ctx, self, _args, caller) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "string") {
-                    throw new InterpreterTypeError("String.prototype.valueOf: this must be String object");
+                    throw new InterpreterTypeError("String.prototype.valueOf: this must be String object", ctx, caller);
                 }
                 return self.internalProperties.value;
             },
@@ -3886,7 +3912,11 @@ function createIntrinsics(): Intrinsics {
             function* numberToString(ctx, self, args, caller) {
                 const value = getNumberObjectValue(self);
                 if (value == null) {
-                    throw new InterpreterTypeError("Number.prototype.toString: this must be Number object");
+                    throw new InterpreterTypeError(
+                        "Number.prototype.toString: this must be Number object",
+                        ctx,
+                        caller
+                    );
                 }
                 const radix = args[0] === undefined ? 10 : yield* toNumber(ctx, args[0], caller);
                 // throws RnageError
@@ -3901,10 +3931,10 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         value: newNativeFunction(
             functionPrototype,
-            function* numberValueOf(_ctx, self, _args) {
+            function* numberValueOf(ctx, self, _args, caller) {
                 const value = getNumberObjectValue(self);
                 if (value == null) {
-                    throw new InterpreterTypeError("Number.prototype.valueOf: this must be Number object");
+                    throw new InterpreterTypeError("Number.prototype.valueOf: this must be Number object", ctx, caller);
                 }
                 return value;
             },
@@ -3944,9 +3974,13 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         value: newNativeFunction(
             functionPrototype,
-            function* booleanToString(_ctx, self, _args) {
+            function* booleanToString(ctx, self, _args, caller) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "boolean") {
-                    throw new InterpreterTypeError("Boolean.prototype.toString: this must be Boolean object");
+                    throw new InterpreterTypeError(
+                        "Boolean.prototype.toString: this must be Boolean object",
+                        ctx,
+                        caller
+                    );
                 }
                 const value = self.internalProperties.value;
                 return value ? "true" : "false";
@@ -3960,9 +3994,13 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         value: newNativeFunction(
             functionPrototype,
-            function* booleanValueOf(_ctx, self, _args) {
+            function* booleanValueOf(ctx, self, _args, caller) {
                 if (!isObject(self) || typeof self.internalProperties.value !== "boolean") {
-                    throw new InterpreterTypeError("Boolean.prototype.valueOf: this must be Boolean object");
+                    throw new InterpreterTypeError(
+                        "Boolean.prototype.valueOf: this must be Boolean object",
+                        ctx,
+                        caller
+                    );
                 }
                 return self.internalProperties.value;
             },
@@ -4059,7 +4097,13 @@ function createIntrinsics(): Intrinsics {
                     },
                 },
             };
-            const completion = yield* run(source, context, { name: "eval code", source });
+            let program: Program;
+            try {
+                program = parse(source, { name: "eval code", source });
+            } catch (e) {
+                throw new InterpreterTypeError(`eval: failed to parse program: ${e}`, ctx, caller); // FIXME
+            }
+            const completion = yield* run(program, context);
             if (completion.type === "normalCompletion" && completion.hasValue) {
                 return completion.value;
             }
@@ -4225,10 +4269,10 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         value: newNativeFunction(
             functionPrototype,
-            function* dateToString(_ctx, self, _args) {
+            function* dateToString(ctx, self, _args, caller) {
                 const value = getDateObjectValue(self);
                 if (value == null) {
-                    throw new InterpreterTypeError("Date.prototype.toString: this must be Date object");
+                    throw new InterpreterTypeError("Date.prototype.toString: this must be Date object", ctx, caller);
                 }
                 return new Date(value).toString();
             },
@@ -4264,10 +4308,10 @@ function createIntrinsics(): Intrinsics {
             dontDelete: false,
             value: newNativeFunction(
                 functionPrototype,
-                function* datePrototypeWrapper(ctx, self, args) {
+                function* datePrototypeWrapper(ctx, self, _args, caller) {
                     const value = getDateObjectValue(self);
                     if (value == null) {
-                        throw new InterpreterTypeError(`Date.prototype.${f}: this must be Date object`);
+                        throw new InterpreterTypeError(`Date.prototype.${f}: this must be Date object`, ctx, caller);
                     }
                     return new Date(value)[f]();
                 },
@@ -4301,7 +4345,7 @@ function createIntrinsics(): Intrinsics {
                 function* datePrototypeWrapper(ctx, self, args, caller) {
                     const value = getDateObjectValue(self);
                     if (value == null || !isObject(self)) {
-                        throw new InterpreterTypeError(`Date.prototype.${f}: this must be Date object`);
+                        throw new InterpreterTypeError(`Date.prototype.${f}: this must be Date object`, ctx, caller);
                     }
                     args.length = Math.min(args.length, length);
                     let numbers: number[] = [];
@@ -4321,10 +4365,10 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         value: newNativeFunction(
             functionPrototype,
-            function* datePrototypeGetYear(_ctx, self, _args) {
+            function* datePrototypeGetYear(ctx, self, _args, caller) {
                 const value = getDateObjectValue(self);
                 if (value == null) {
-                    throw new InterpreterTypeError(`Date.prototype.getYear: this must be Date object`);
+                    throw new InterpreterTypeError(`Date.prototype.getYear: this must be Date object`, ctx, caller);
                 }
                 return new Date(value).getFullYear() - 1900;
             },
@@ -4337,10 +4381,10 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         value: newNativeFunction(
             functionPrototype,
-            function* datePrototypeToUTCString(_ctx, self, _args) {
+            function* datePrototypeToUTCString(ctx, self, _args, caller) {
                 const value = getDateObjectValue(self);
                 if (value == null) {
-                    throw new InterpreterTypeError(`Date.prototype.toGMTString: this must be Date object`);
+                    throw new InterpreterTypeError(`Date.prototype.toGMTString: this must be Date object`, ctx, caller);
                 }
                 return new Date(value).toUTCString();
             },
@@ -4356,7 +4400,7 @@ function createIntrinsics(): Intrinsics {
             function* datePrototypeSetSeconds(ctx, self, args, caller) {
                 const value = getDateObjectValue(self);
                 if (value == null) {
-                    throw new InterpreterTypeError(`Date.prototype.setSeconds: this must be Date object`);
+                    throw new InterpreterTypeError(`Date.prototype.setSeconds: this must be Date object`, ctx, caller);
                 }
                 const year = yield* toNumber(ctx, args[0], caller);
                 return new Date(value).setFullYear(year);
@@ -4502,7 +4546,7 @@ function* referenceGetValue(ctx: Context, reference: RefOrValue, caller: Caller)
         return reference;
     }
     if (reference.baseObject == null) {
-        throw new InterpreterReferenceError(`${reference.name} is not defined`);
+        throw new InterpreterReferenceError(`${reference.name} is not defined`, ctx, caller);
     }
     return yield* getProperty(ctx, reference.baseObject, reference.name, caller);
 }
@@ -4514,7 +4558,7 @@ function* referencePutValue(
     caller: Caller
 ): Generator<unknown, unknown> {
     if (!isReference(reference)) {
-        throw new InterpreterReferenceError("not reference");
+        throw new InterpreterReferenceError("not reference", ctx, caller);
     }
     yield* putProperty(ctx, reference.baseObject ?? ctx.realm.globalObject, reference.name, value, caller);
     return;
@@ -4719,10 +4763,10 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             const left = yield* referenceGetValue(ctx, ref, expression);
             if ("name" in expression) {
                 if (left == null) {
-                    throw new InterpreterReferenceError(`can't access property ${expression.name}`);
+                    throw new InterpreterReferenceError(`can't access property ${expression.name}`, ctx, expression);
                 }
                 return {
-                    baseObject: toObject(ctx.realm.intrinsics, left),
+                    baseObject: toObject(ctx.realm.intrinsics, left, ctx, expression),
                     name: expression.name,
                     activation: false,
                 };
@@ -4734,9 +4778,9 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                 );
                 if (left == null) {
                     const name = yield* toString(ctx, right, expression);
-                    throw new InterpreterReferenceError(`can't access property ${escapeString(name)}`);
+                    throw new InterpreterReferenceError(`can't access property ${escapeString(name)}`, ctx, expression);
                 }
-                const baseObject = toObject(ctx.realm.intrinsics, left);
+                const baseObject = toObject(ctx.realm.intrinsics, left, ctx, expression);
                 const name = yield* toString(ctx, right, expression);
                 return {
                     baseObject,
@@ -4756,15 +4800,15 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                 args = yield* evaluateList(ctx, expression.argumentList, expression);
             }
             if (!isObject(value)) {
-                throw new InterpreterTypeError("!isObject");
+                throw new InterpreterTypeError(`${value} is not a constructor`, ctx, expression);
             }
             const construct = value.internalProperties.construct;
             if (!construct) {
-                throw new InterpreterTypeError("not constructable");
+                throw new InterpreterTypeError("not constructable", ctx, expression);
             }
             const obj = yield* construct(ctx, args, expression);
             if (!isObject(obj)) {
-                throw new InterpreterTypeError("[[Construct]] result is not a object");
+                throw new InterpreterTypeError("[[Construct]] result is not a object", ctx, expression);
             }
             return obj;
         }
@@ -4773,11 +4817,11 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             const args = yield* evaluateList(ctx, expression.argumentList, expression);
             const value = yield* referenceGetValue(ctx, valueRef, expression);
             if (!isObject(value)) {
-                throw new InterpreterTypeError("not Object");
+                throw new InterpreterTypeError(`failed to call ${value}`, ctx, expression);
             }
             const call = value.internalProperties.call;
             if (call == null) {
-                throw new InterpreterTypeError("not callable");
+                throw new InterpreterTypeError("not callable", ctx, expression);
             }
             let self = isReference(valueRef) && !valueRef.activation ? valueRef.baseObject : null;
             return yield* call(ctx, self, args, expression);
@@ -4802,7 +4846,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             const ref = yield* evaluateExpression(ctx, expression.expression);
             if (!isReference(ref)) {
                 // newer ES returns true
-                throw new InterpreterReferenceError("value can not be deleted");
+                throw new InterpreterReferenceError("value can not be deleted", ctx, expression);
             }
             if (!isObject(ref.baseObject)) {
                 return true;
@@ -5389,7 +5433,9 @@ function* runForInStatement(ctx: Context, statement: ForInStatement): Generator<
     }
     let obj = toObject(
         ctx.realm.intrinsics,
-        yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, statement.expression), statement.expression)
+        yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, statement.expression), statement.expression),
+        ctx,
+        statement.expression
     );
     let completion: Completion = {
         type: "normalCompletion",
@@ -5458,7 +5504,7 @@ function* runReturnStatement(ctx: Context, statement: ReturnStatement): Generato
 function* runWithStatement(ctx: Context, statement: WithStatement): Generator<unknown, Completion> {
     const ref = yield* evaluateExpression(ctx, statement.expression);
     const value = yield* referenceGetValue(ctx, ref, statement.expression);
-    const object = toObject(ctx.realm.intrinsics, value);
+    const object = toObject(ctx.realm.intrinsics, value, ctx, statement.expression);
     const withScope: Scope = {
         parent: ctx.scope,
         activation: false,
@@ -5699,8 +5745,7 @@ export function createGlobalContext(): Context {
     return context;
 }
 
-function* run(source: string, context: Context, sourceInfo?: SourceInfo): Generator<unknown, Completion> {
-    const program = parse(source, sourceInfo);
+function* run(program: Program, context: Context): Generator<unknown, Completion> {
     let completion: Completion = {
         type: "normalCompletion",
         hasValue: false,
@@ -5739,7 +5784,8 @@ function* run(source: string, context: Context, sourceInfo?: SourceInfo): Genera
 }
 
 export async function runInContext(source: string, context: Context, sourceInfo?: SourceInfo): Promise<Completion> {
-    const iter = run(source, context, sourceInfo);
+    const program = parse(source, sourceInfo);
+    const iter = run(program, context);
     let lastResult: any = undefined;
     while (true) {
         const { value, done } = iter.next(lastResult);
