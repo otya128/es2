@@ -237,15 +237,68 @@ class UnexpectedCharacterError extends Error {
     }
 }
 
-class UnexpectedTokenError extends Error {
-    constructor(syntax: string, expected: string, actual: Token) {
-        super(`${syntax}: Expected ${expected}, Actual: ${actual.value}, ${actual.start.line}:${actual.start.column}`);
-    }
+function formatUnexpectedCharacterError(
+    syntax: string,
+    expected: string,
+    actual: string,
+    position: Position,
+    context?: Context,
+    caller?: Caller,
+    options?: ErrorOptions
+): [string, StackTraceEntry[], ErrorOptions | undefined] {
+    const stackTrace = context != null && caller != null ? walkStackTrace(context, caller) : [];
+    stackTrace.unshift({
+        name: "",
+        start: position,
+        end: position,
+    });
+    const table: { [key: string]: string } = {
+        "": "<EOF>",
+        "\n": "<LF>",
+        "\b": "<BS>",
+        "\t": "<HT>",
+        "\f": "<FF>",
+        "\r": "<CR>",
+    };
+    return [`${syntax}: Expected: ${expected}, Actual: ${table[actual] ?? actual}`, stackTrace, options];
 }
-
+function formatUnexpectedTokenError(
+    syntax: string,
+    expected: string,
+    actual: Token,
+    context?: Context,
+    caller?: Caller,
+    options?: ErrorOptions
+): [string, StackTraceEntry[], ErrorOptions | undefined] {
+    const stackTrace = context != null && caller != null ? walkStackTrace(context, caller) : [];
+    stackTrace.unshift({
+        name: "",
+        start: actual.start,
+        end: actual.end,
+    });
+    return [`${syntax}: Expected: ${expected}, Actual: ${actual.value}`, stackTrace, options];
+}
+function formatSyntaxError(
+    syntax: string,
+    message: string,
+    token: Token,
+    context?: Context,
+    caller?: Caller,
+    options?: ErrorOptions
+): [string, StackTraceEntry[], ErrorOptions | undefined] {
+    const stackTrace = context != null && caller != null ? walkStackTrace(context, caller) : [];
+    stackTrace.unshift({
+        name: "",
+        start: token.start,
+        end: token.end,
+    });
+    return [`${syntax}: ${message}`, stackTrace, options];
+}
 class InterpreterSyntaxError extends Error {
-    constructor(syntax: string, message: string, position: Position) {
-        super(`${syntax}: ${message}, ${position.line}:${position.column}`);
+    stackTrace?: StackTraceEntry[];
+    constructor(message: string, stackTrace: StackTraceEntry[], options?: ErrorOptions) {
+        super(`${message}\n${stackTrace.map(stackTraceToString).join("\n")}`, options);
+        this.stackTrace = stackTrace;
     }
 }
 
@@ -263,6 +316,15 @@ class InterpreterReferenceError extends Error {
 }
 
 class InterpreterTypeError extends Error {
+    stackTrace: StackTraceEntry[];
+    constructor(message: string, context: Context, caller: Caller) {
+        const stackTrace = walkStackTrace(context, caller);
+        super(`${message}\n${stackTrace.map(stackTraceToString).join("\n")}`);
+        this.stackTrace = stackTrace;
+    }
+}
+
+class InterpreterRangeError extends Error {
     stackTrace: StackTraceEntry[];
     constructor(message: string, context: Context, caller: Caller) {
         const stackTrace = walkStackTrace(context, caller);
@@ -414,11 +476,13 @@ export function* tokenize(source: string, sourceInfo?: SourceInfo): Generator<To
             reader.next();
             continue;
         }
-        throw new UnexpectedCharacterError(
-            "InputElement",
-            "WhiteSpace or LineTerminator or Comment or Token",
-            char,
-            reader.position
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedCharacterError(
+                "InputElement",
+                "WhiteSpace or LineTerminator or Comment or Token",
+                char,
+                reader.position
+            )
         );
     }
     return { type: "end", value: "<EOF>", start: reader.position, end: reader.position };
@@ -452,7 +516,9 @@ function parseMultiLineComment(reader: Reader): boolean {
             }
         }
     }
-    throw new UnexpectedCharacterError("MultiLineComment", "SourceCharacter", reader.current, reader.position);
+    throw new InterpreterSyntaxError(
+        ...formatUnexpectedCharacterError("MultiLineComment", "SourceCharacter", reader.current, reader.position)
+    );
 }
 
 function parseSingleLineComment(reader: Reader) {
@@ -480,7 +546,9 @@ function parseDecimalLiteral(reader: Reader, start: Position): NumericLiteral {
             }
         }
     } else {
-        throw new UnexpectedCharacterError("DecimalLiteral", ". or DecimalDigit", reader.current, reader.position);
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedCharacterError("DecimalLiteral", ". or DecimalDigit", reader.current, reader.position)
+        );
     }
     if (isExponentIndicator(reader.current)) {
         parseExponentPart(reader);
@@ -492,7 +560,9 @@ function parseDecimalLiteral(reader: Reader, start: Position): NumericLiteral {
 function parseDecimalDigits(reader: Reader) {
     const char = reader.current;
     if (!isDecimalDigit(char)) {
-        throw new UnexpectedCharacterError("DecimalDigits", "DecimalDigit", char, reader.position);
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedCharacterError("DecimalDigits", "DecimalDigit", char, reader.position)
+        );
     }
     while (!reader.eof) {
         const char = reader.next();
@@ -504,7 +574,9 @@ function parseDecimalDigits(reader: Reader) {
 
 function parseExponentPart(reader: Reader) {
     if (!isExponentIndicator(reader.current)) {
-        throw new UnexpectedCharacterError("ExponentPart", "ExponentIndicator", reader.current, reader.position);
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedCharacterError("ExponentPart", "ExponentIndicator", reader.current, reader.position)
+        );
     }
     let char = reader.next();
     if (char === "+" || char === "-") {
@@ -516,7 +588,9 @@ function parseExponentPart(reader: Reader) {
 function parseHexIntegerLiteral(reader: Reader, start: Position): NumericLiteral {
     const char = reader.next();
     if (!isHexDigit(char)) {
-        throw new UnexpectedCharacterError("HexIntegerLiteral", "HexDigit", char, reader.position);
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedCharacterError("HexIntegerLiteral", "HexDigit", char, reader.position)
+        );
     }
     while (!reader.eof) {
         if (!isHexDigit(reader.next())) {
@@ -530,7 +604,9 @@ function parseHexIntegerLiteral(reader: Reader, start: Position): NumericLiteral
 function parseOctalIntegerLiteral(reader: Reader, start: Position): NumericLiteral {
     const char = reader.current;
     if (!isOctalDigit(char)) {
-        throw new UnexpectedCharacterError("OctalIntegerLiteral", "OctalDigit", char, reader.position);
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedCharacterError("OctalIntegerLiteral", "OctalDigit", char, reader.position)
+        );
     }
     while (!reader.eof) {
         if (!isOctalDigit(reader.next())) {
@@ -607,20 +683,24 @@ function readStringLiteral(reader: Reader): StringLiteral {
                         // HexEscapeSequence
                         const u1 = reader.next();
                         if (!isHexDigit(u1)) {
-                            throw new UnexpectedCharacterError(
-                                "HexEscapeSequence",
-                                "HexDigit",
-                                reader.current,
-                                reader.position
+                            throw new InterpreterSyntaxError(
+                                ...formatUnexpectedCharacterError(
+                                    "HexEscapeSequence",
+                                    "HexDigit",
+                                    reader.current,
+                                    reader.position
+                                )
                             );
                         }
                         const u2 = reader.next();
                         if (!isHexDigit(u2)) {
-                            throw new UnexpectedCharacterError(
-                                "HexEscapeSequence",
-                                "HexDigit",
-                                reader.current,
-                                reader.position
+                            throw new InterpreterSyntaxError(
+                                ...formatUnexpectedCharacterError(
+                                    "HexEscapeSequence",
+                                    "HexDigit",
+                                    reader.current,
+                                    reader.position
+                                )
                             );
                         }
                         value += String.fromCharCode(parseInt(u1 + u2, 16));
@@ -628,58 +708,70 @@ function readStringLiteral(reader: Reader): StringLiteral {
                         // UnicodeEscapeSequence
                         const u1 = reader.next();
                         if (!isHexDigit(u1)) {
-                            throw new UnexpectedCharacterError(
-                                "UnicodeEscapeSequence",
-                                "HexDigit",
-                                reader.current,
-                                reader.position
+                            throw new InterpreterSyntaxError(
+                                ...formatUnexpectedCharacterError(
+                                    "UnicodeEscapeSequence",
+                                    "HexDigit",
+                                    reader.current,
+                                    reader.position
+                                )
                             );
                         }
                         const u2 = reader.next();
                         if (!isHexDigit(u2)) {
-                            throw new UnexpectedCharacterError(
-                                "UnicodeEscapeSequence",
-                                "HexDigit",
-                                reader.current,
-                                reader.position
+                            throw new InterpreterSyntaxError(
+                                ...formatUnexpectedCharacterError(
+                                    "UnicodeEscapeSequence",
+                                    "HexDigit",
+                                    reader.current,
+                                    reader.position
+                                )
                             );
                         }
                         const u3 = reader.next();
                         if (!isHexDigit(u3)) {
-                            throw new UnexpectedCharacterError(
-                                "UnicodeEscapeSequence",
-                                "HexDigit",
-                                reader.current,
-                                reader.position
+                            throw new InterpreterSyntaxError(
+                                ...formatUnexpectedCharacterError(
+                                    "UnicodeEscapeSequence",
+                                    "HexDigit",
+                                    reader.current,
+                                    reader.position
+                                )
                             );
                         }
                         const u4 = reader.next();
                         if (!isHexDigit(u4)) {
-                            throw new UnexpectedCharacterError(
-                                "UnicodeEscapeSequence",
-                                "HexDigit",
-                                reader.current,
-                                reader.position
+                            throw new InterpreterSyntaxError(
+                                ...formatUnexpectedCharacterError(
+                                    "UnicodeEscapeSequence",
+                                    "HexDigit",
+                                    reader.current,
+                                    reader.position
+                                )
                             );
                         }
                         value += String.fromCharCode(parseInt(u1 + u2 + u3 + u4, 16));
                     } else if (isZeroToThree(char)) {
                         const o1 = reader.next();
                         if (!isOctalDigit(o1)) {
-                            throw new UnexpectedCharacterError(
-                                "OctalEscapeSequence",
-                                "OctalDigit",
-                                reader.current,
-                                reader.position
+                            throw new InterpreterSyntaxError(
+                                ...formatUnexpectedCharacterError(
+                                    "OctalEscapeSequence",
+                                    "OctalDigit",
+                                    reader.current,
+                                    reader.position
+                                )
                             );
                         }
                         const o2 = reader.next();
                         if (!isOctalDigit(o2)) {
-                            throw new UnexpectedCharacterError(
-                                "OctalEscapeSequence",
-                                "OctalDigit",
-                                reader.current,
-                                reader.position
+                            throw new InterpreterSyntaxError(
+                                ...formatUnexpectedCharacterError(
+                                    "OctalEscapeSequence",
+                                    "OctalDigit",
+                                    reader.current,
+                                    reader.position
+                                )
                             );
                         }
                         value += String.fromCharCode(parseInt(char + o1 + o2, 8));
@@ -691,11 +783,13 @@ function readStringLiteral(reader: Reader): StringLiteral {
                         }
                         value += String.fromCharCode(parseInt(o, 8));
                     } else if (isLineTerminator(char)) {
-                        throw new UnexpectedCharacterError(
-                            "StringLiteral",
-                            "not LineTerminator",
-                            reader.current,
-                            reader.position
+                        throw new InterpreterSyntaxError(
+                            ...formatUnexpectedCharacterError(
+                                "StringLiteral",
+                                "not LineTerminator",
+                                reader.current,
+                                reader.position
+                            )
                         );
                     } else {
                         value += char;
@@ -703,12 +797,21 @@ function readStringLiteral(reader: Reader): StringLiteral {
                     break;
             }
         } else if (isLineTerminator(char)) {
-            throw new UnexpectedCharacterError("StringLiteral", "not LineTerminator", reader.current, reader.position);
+            throw new InterpreterSyntaxError(
+                ...formatUnexpectedCharacterError(
+                    "StringLiteral",
+                    "not LineTerminator",
+                    reader.current,
+                    reader.position
+                )
+            );
         } else {
             value += char;
         }
     }
-    throw new UnexpectedCharacterError("StringLiteral", "SourceCharacter", reader.current, reader.position);
+    throw new InterpreterSyntaxError(
+        ...formatUnexpectedCharacterError("StringLiteral", "SourceCharacter", reader.current, reader.position)
+    );
 }
 
 function readPunctuator(reader: Reader): Punctuator | undefined {
@@ -1260,8 +1363,8 @@ function visitStatement(statement: Statement, visitor: (statement: Statement) =>
         case "returnStatement":
             break;
         default: {
-            const _: never = statement;
-            throw new Error("unreachable");
+            const s: never = statement;
+            throw new Error("unreachable: " + s);
         }
     }
 }
@@ -1369,7 +1472,9 @@ function parseFormalParameterList(tokenizer: Tokenizer): string[] {
         }
         const parameter = tokenizer.next();
         if (parameter.type !== "identifier") {
-            throw new UnexpectedTokenError("FormalParameterList", "Identifier", parameter);
+            throw new InterpreterSyntaxError(
+                ...formatUnexpectedTokenError("FormalParameterList", "Identifier", parameter)
+            );
         }
         parameters.push(parameter.value);
     }
@@ -1379,21 +1484,21 @@ function parseFormalParameterList(tokenizer: Tokenizer): string[] {
 function parseFunctionDeclaration(tokenizer: Tokenizer): FunctionDeclaration {
     const token = tokenizer.current;
     if (token.type !== "keyword" || token.value !== "function") {
-        throw new UnexpectedTokenError("FunctionDeclaration", "function", token);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("FunctionDeclaration", "function", token));
     }
     const name = tokenizer.next();
     if (name.type !== "identifier") {
-        throw new UnexpectedTokenError("FunctionDeclaration", "identifier", name);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("FunctionDeclaration", "identifier", name));
     }
     const p = tokenizer.next();
     if (p.type !== "punctuator" || p.value !== "(") {
-        throw new UnexpectedTokenError("FunctionDeclaration", "(", p);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("FunctionDeclaration", "(", p));
     }
     tokenizer.next();
     const parameters: string[] = parseFormalParameterList(tokenizer);
     const end = tokenizer.current;
     if (end.type !== "punctuator" || end.value !== ")") {
-        throw new UnexpectedTokenError("FormalParameterList", ")", end);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("FormalParameterList", ")", end));
     }
     tokenizer.next();
     return {
@@ -1471,17 +1576,19 @@ function parseStatement(tokenizer: Tokenizer, state: ParserState): Statement {
     if (begin.type === "keyword" && begin.value === "with") {
         return parseWithStatement(tokenizer, state);
     }
-    throw new UnexpectedTokenError(
-        "Statement",
-        "{ or var or this or delete or void or typeof or new or Identifier or Literal or ( or ++ or -- or + or - or ~ or ! or ; or if or for or while or continue or break or return or with",
-        begin
+    throw new InterpreterSyntaxError(
+        ...formatUnexpectedTokenError(
+            "Statement",
+            "{ or var or this or delete or void or typeof or new or Identifier or Literal or ( or ++ or -- or + or - or ~ or ! or ; or if or for or while or continue or break or return or with",
+            begin
+        )
     );
 }
 
 function parseBlock(tokenizer: Tokenizer, state: ParserState): Block {
     const begin = tokenizer.current;
     if (begin.type !== "punctuator" || begin.value !== "{") {
-        throw new UnexpectedTokenError("Block", "{", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("Block", "{", begin));
     }
     tokenizer.next();
     const statementList: Statement[] = [];
@@ -1504,12 +1611,14 @@ function parseBlock(tokenizer: Tokenizer, state: ParserState): Block {
 function parseVariableStatement(tokenizer: Tokenizer): VariableStatement {
     const begin = tokenizer.current;
     if (begin.type !== "keyword" || begin.value !== "var") {
-        throw new UnexpectedTokenError("VariableStatement", "var", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("VariableStatement", "var", begin));
     }
     tokenizer.next();
     const variableDeclarationList = parseVariableDeclarationList(tokenizer);
     if (!parseSemicolon(tokenizer)) {
-        throw new UnexpectedTokenError("VariableStatement", "; or } or LineTerminator", tokenizer.current);
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedTokenError("VariableStatement", "; or } or LineTerminator", tokenizer.current)
+        );
     }
     return {
         type: "variableStatement",
@@ -1534,7 +1643,9 @@ function parseVariableDeclarationList(tokenizer: Tokenizer): VariableDeclaration
         tokenizer.next();
     }
     if (variableDeclarationList.length === 0) {
-        throw new UnexpectedTokenError("VariableDeclarationList", "identifier", tokenizer.current);
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedTokenError("VariableDeclarationList", "identifier", tokenizer.current)
+        );
     }
     return variableDeclarationList;
 }
@@ -1542,7 +1653,9 @@ function parseVariableDeclarationList(tokenizer: Tokenizer): VariableDeclaration
 function parseVariableDeclaration(tokenizer: Tokenizer): VariableDeclaration {
     const identifier = tokenizer.current;
     if (identifier.type !== "identifier") {
-        throw new UnexpectedTokenError("VariableDeclaration", "Identifier", identifier);
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedTokenError("VariableDeclaration", "Identifier", identifier)
+        );
     }
     const eq = tokenizer.next();
     let initializer: AssignmentExpression | undefined;
@@ -1581,7 +1694,9 @@ function parseExpressionStatement(tokenizer: Tokenizer): ExpressionStatement {
     const begin = tokenizer.current;
     const expression = parseExpression(tokenizer);
     if (!parseSemicolon(tokenizer)) {
-        throw new UnexpectedTokenError("ExpressionStatement", "; or } or LineTerminator", tokenizer.current);
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedTokenError("ExpressionStatement", "; or } or LineTerminator", tokenizer.current)
+        );
     }
     return {
         type: "expressionStatement",
@@ -1594,7 +1709,7 @@ function parseExpressionStatement(tokenizer: Tokenizer): ExpressionStatement {
 function parseEmptyStatement(tokenizer: Tokenizer): EmptyStatement {
     const begin = tokenizer.current;
     if (begin.type !== "punctuator" || begin.value !== ";") {
-        throw new UnexpectedTokenError("EmptyStatement", ";", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("EmptyStatement", ";", begin));
     }
     tokenizer.next();
     return {
@@ -1607,17 +1722,17 @@ function parseEmptyStatement(tokenizer: Tokenizer): EmptyStatement {
 function parseIfStatement(tokenizer: Tokenizer, state: ParserState): IfStatement {
     const begin = tokenizer.current;
     if (begin.type !== "keyword" || begin.value !== "if") {
-        throw new UnexpectedTokenError("IfStatement", "if", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("IfStatement", "if", begin));
     }
     const ps = tokenizer.next();
     if (ps.type !== "punctuator" || ps.value !== "(") {
-        throw new UnexpectedTokenError("IfStatement", "(", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("IfStatement", "(", begin));
     }
     tokenizer.next();
     const expression = parseExpression(tokenizer);
     const pe = tokenizer.current;
     if (pe.type !== "punctuator" || pe.value !== ")") {
-        throw new UnexpectedTokenError("IfStatement", ")", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("IfStatement", ")", begin));
     }
     tokenizer.next();
     const thenStatement = parseStatement(tokenizer, state);
@@ -1640,17 +1755,17 @@ function parseIfStatement(tokenizer: Tokenizer, state: ParserState): IfStatement
 function parseWhileStatement(tokenizer: Tokenizer, state: ParserState): WhileStatement {
     const begin = tokenizer.current;
     if (begin.type !== "keyword" || begin.value !== "while") {
-        throw new UnexpectedTokenError("WhileStatement", "while", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("WhileStatement", "while", begin));
     }
     const ps = tokenizer.next();
     if (ps.type !== "punctuator" || ps.value !== "(") {
-        throw new UnexpectedTokenError("WhileStatement", "(", ps);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("WhileStatement", "(", ps));
     }
     tokenizer.next();
     const expression = parseExpression(tokenizer);
     const pe = tokenizer.current;
     if (pe.type !== "punctuator" || pe.value !== ")") {
-        throw new UnexpectedTokenError("WhileStatement", ")", pe);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("WhileStatement", ")", pe));
     }
     tokenizer.next();
     const statement = parseStatement(tokenizer, { ...state, while: true });
@@ -1666,11 +1781,11 @@ function parseWhileStatement(tokenizer: Tokenizer, state: ParserState): WhileSta
 function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStatement | ForInStatement {
     const begin = tokenizer.current;
     if (begin.type !== "keyword" || begin.value !== "for") {
-        throw new UnexpectedTokenError("ForStatement", "for", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", "for", begin));
     }
     const ps = tokenizer.next();
     if (ps.type !== "punctuator" || ps.value !== "(") {
-        throw new UnexpectedTokenError("ForStatement", "(", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", "(", begin));
     }
     const initToken = tokenizer.next();
     let initialization: VariableStatement | Expression | undefined;
@@ -1695,7 +1810,7 @@ function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStateme
         }
         const secondSemicolon = tokenizer.current;
         if (secondSemicolon.type !== "punctuator" || secondSemicolon.value !== ";") {
-            throw new UnexpectedTokenError("ForStatement", ";", secondSemicolon);
+            throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", ";", secondSemicolon));
         }
         const endOrExpression = tokenizer.next();
         let afterthought: Expression | undefined;
@@ -1704,7 +1819,7 @@ function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStateme
         }
         const end = tokenizer.current;
         if (end.type !== "punctuator" || end.value !== ")") {
-            throw new UnexpectedTokenError("ForStatement", ")", secondSemicolon);
+            throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", ")", secondSemicolon));
         }
         tokenizer.next();
         const statement = parseStatement(tokenizer, { ...state, for: true });
@@ -1720,13 +1835,17 @@ function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStateme
     } else if (inOrSemicolon.type === "keyword" && inOrSemicolon.value === "in") {
         let forInIntialization: VariableDeclaration | LeftHandSideExpression;
         if (initialization == null) {
-            throw new InterpreterSyntaxError("ForStatement", "VariableDeclaration", tokenizer.current.start);
+            throw new InterpreterSyntaxError(
+                ...formatSyntaxError("ForStatement", "VariableDeclaration", tokenizer.current)
+            );
         } else if (initialization.type === "variableStatement") {
             if (
                 initialization.variableDeclarationList[0] == null ||
                 initialization.variableDeclarationList.length !== 1
             ) {
-                throw new InterpreterSyntaxError("ForStatement", "VariableDeclaration", tokenizer.current.start);
+                throw new InterpreterSyntaxError(
+                    ...formatSyntaxError("ForStatement", "VariableDeclaration", tokenizer.current)
+                );
             }
             forInIntialization = initialization.variableDeclarationList[0];
         } else {
@@ -1741,14 +1860,16 @@ function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStateme
                     forInIntialization = initialization;
                     break;
                 default:
-                    throw new InterpreterSyntaxError("ForStatement", "LeftHandSideExpression", tokenizer.current.start);
+                    throw new InterpreterSyntaxError(
+                        ...formatSyntaxError("ForStatement", "LeftHandSideExpression", tokenizer.current)
+                    );
             }
         }
         tokenizer.next();
         const expression = parseExpression(tokenizer);
         const pe = tokenizer.current;
         if (pe.type !== "punctuator" || pe.value !== ")") {
-            throw new UnexpectedTokenError("ForStatement", ")", begin);
+            throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", ")", begin));
         }
         tokenizer.next();
         const statement = parseStatement(tokenizer, { ...state, for: true });
@@ -1761,25 +1882,25 @@ function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStateme
             end: tokenizer.prevPosition,
         };
     } else {
-        throw new UnexpectedTokenError("ForStatement", "in or ;", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", "in or ;", begin));
     }
 }
 
 function parseContinueStatement(tokenizer: Tokenizer, state: ParserState): ContinueStatement {
     const token = tokenizer.current;
     if (token.type !== "keyword" || token.value !== "continue") {
-        throw new UnexpectedTokenError("ContinueStatement", "continue", token);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ContinueStatement", "continue", token));
     }
     if (!state.while && !state.for) {
         throw new InterpreterSyntaxError(
-            "ContinueStatement",
-            "continue statements are only allowed inside while/for",
-            token.start
+            ...formatSyntaxError("ContinueStatement", "continue statements are only allowed inside while/for", token)
         );
     }
     tokenizer.next();
     if (!parseSemicolon(tokenizer)) {
-        throw new UnexpectedTokenError("ContinueStatement", "; or } or LineTerminator", tokenizer.current);
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedTokenError("ContinueStatement", "; or } or LineTerminator", tokenizer.current)
+        );
     }
     return {
         type: "continueStatement",
@@ -1791,18 +1912,18 @@ function parseContinueStatement(tokenizer: Tokenizer, state: ParserState): Conti
 function parseBreakStatement(tokenizer: Tokenizer, state: ParserState): BreakStatement {
     const token = tokenizer.current;
     if (token.type !== "keyword" || token.value !== "break") {
-        throw new UnexpectedTokenError("BreakStatement", "break", token);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("BreakStatement", "break", token));
     }
     if (!state.while && !state.for) {
         throw new InterpreterSyntaxError(
-            "BreakStatement",
-            "break statements are only allowed inside while/for",
-            token.start
+            ...formatSyntaxError("BreakStatement", "break statements are only allowed inside while/for", token)
         );
     }
     tokenizer.next();
     if (!parseSemicolon(tokenizer)) {
-        throw new UnexpectedTokenError("BreakStatement", "; or } or LineTerminator", tokenizer.current);
+        throw new InterpreterSyntaxError(
+            ...formatUnexpectedTokenError("BreakStatement", "; or } or LineTerminator", tokenizer.current)
+        );
     }
     return {
         type: "breakStatement",
@@ -1814,20 +1935,20 @@ function parseBreakStatement(tokenizer: Tokenizer, state: ParserState): BreakSta
 function parseReturnStatement(tokenizer: Tokenizer, state: ParserState): ReturnStatement {
     const token = tokenizer.current;
     if (token.type !== "keyword" || token.value !== "return") {
-        throw new UnexpectedTokenError("ReturnStatement", "return", token);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ReturnStatement", "return", token));
     }
     if (!state.function) {
         throw new InterpreterSyntaxError(
-            "ReturnStatement",
-            "return statements are only allowed inside functions",
-            token.start
+            ...formatSyntaxError("ReturnStatement", "return statements are only allowed inside functions", token)
         );
     }
     tokenizer.next();
     if (!parseSemicolon(tokenizer)) {
         const expression = parseExpression(tokenizer);
         if (!parseSemicolon(tokenizer)) {
-            throw new UnexpectedTokenError("ReturnStatement", "; or } or LineTerminator", tokenizer.current);
+            throw new InterpreterSyntaxError(
+                ...formatUnexpectedTokenError("ReturnStatement", "; or } or LineTerminator", tokenizer.current)
+            );
         }
         return {
             type: "returnStatement",
@@ -1847,17 +1968,17 @@ function parseReturnStatement(tokenizer: Tokenizer, state: ParserState): ReturnS
 function parseWithStatement(tokenizer: Tokenizer, state: ParserState): WithStatement {
     const begin = tokenizer.current;
     if (begin.type !== "keyword" || begin.value !== "with") {
-        throw new UnexpectedTokenError("WithStatement", "with", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("WithStatement", "with", begin));
     }
     const ps = tokenizer.next();
     if (ps.type !== "punctuator" || ps.value !== "(") {
-        throw new UnexpectedTokenError("WithStatement", "(", ps);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("WithStatement", "(", ps));
     }
     tokenizer.next();
     const expression = parseExpression(tokenizer);
     const pe = tokenizer.current;
     if (pe.type !== "punctuator" || pe.value !== ")") {
-        throw new UnexpectedTokenError("WithStatement", ")", pe);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("WithStatement", ")", pe));
     }
     tokenizer.next();
     const statement = parseStatement(tokenizer, state);
@@ -1908,7 +2029,7 @@ function parsePrimaryExpression(tokenizer: Tokenizer): PrimaryExpression {
         const expression = parseExpression(tokenizer);
         const end = tokenizer.current;
         if (end.type !== "punctuator" || end.value !== ")") {
-            throw new UnexpectedTokenError("GroupingOperator", ")", end);
+            throw new InterpreterSyntaxError(...formatUnexpectedTokenError("GroupingOperator", ")", end));
         }
         tokenizer.next();
         return {
@@ -1918,7 +2039,9 @@ function parsePrimaryExpression(tokenizer: Tokenizer): PrimaryExpression {
             end: end.end,
         };
     }
-    throw new UnexpectedTokenError("PrimaryExpression", "this or Identifier or Literal or (", token);
+    throw new InterpreterSyntaxError(
+        ...formatUnexpectedTokenError("PrimaryExpression", "this or Identifier or Literal or (", token)
+    );
 }
 
 function parseMemberExpression(tokenizer: Tokenizer): MemberExpression {
@@ -1938,7 +2061,7 @@ function parseMemberExpression(tokenizer: Tokenizer): MemberExpression {
             };
             const token = tokenizer.current;
             if (token.type !== "punctuator" && token.value !== ")") {
-                throw new UnexpectedTokenError("MemberExpression", ")", token);
+                throw new InterpreterSyntaxError(...formatUnexpectedTokenError("MemberExpression", ")", token));
             }
             tokenizer.next();
         } else {
@@ -1958,7 +2081,9 @@ function parseMemberExpression(tokenizer: Tokenizer): MemberExpression {
         if (token.type === "punctuator" && token.value === ".") {
             const token = tokenizer.next();
             if (token.type !== "identifier") {
-                throw new UnexpectedTokenError("MemberExpression", "Identifier", token);
+                throw new InterpreterSyntaxError(
+                    ...formatUnexpectedTokenError("MemberExpression", "Identifier", token)
+                );
             }
             left = {
                 type: "memberOperator",
@@ -1973,7 +2098,7 @@ function parseMemberExpression(tokenizer: Tokenizer): MemberExpression {
             const right = parseExpression(tokenizer);
             const token = tokenizer.current;
             if (token.type !== "punctuator" || token.value !== "]") {
-                throw new UnexpectedTokenError("MemberExpression", "]", token);
+                throw new InterpreterSyntaxError(...formatUnexpectedTokenError("MemberExpression", "]", token));
             }
             left = {
                 type: "memberOperator",
@@ -2003,13 +2128,15 @@ function parseLeftHandSideExpression(tokenizer: Tokenizer): LeftHandSideExpressi
             };
             const token = tokenizer.current;
             if (token.type !== "punctuator" || token.value !== ")") {
-                throw new UnexpectedTokenError("MemberExpression", ")", token);
+                throw new InterpreterSyntaxError(...formatUnexpectedTokenError("MemberExpression", ")", token));
             }
             tokenizer.next();
         } else if (token.type === "punctuator" && token.value === ".") {
             const token = tokenizer.next();
             if (token.type !== "identifier") {
-                throw new UnexpectedTokenError("MemberExpression", "Identifier", token);
+                throw new InterpreterSyntaxError(
+                    ...formatUnexpectedTokenError("MemberExpression", "Identifier", token)
+                );
             }
             left = {
                 type: "memberOperator",
@@ -2024,7 +2151,7 @@ function parseLeftHandSideExpression(tokenizer: Tokenizer): LeftHandSideExpressi
             const right = parseExpression(tokenizer);
             const token = tokenizer.current;
             if (token.type !== "punctuator" || token.value !== "]") {
-                throw new UnexpectedTokenError("MemberExpression", "]", token);
+                throw new InterpreterSyntaxError(...formatUnexpectedTokenError("MemberExpression", "]", token));
             }
             left = {
                 type: "memberOperator",
@@ -2044,7 +2171,7 @@ function parseArgumentList(tokenizer: Tokenizer): AssignmentExpression[] {
     const argumentList: AssignmentExpression[] = [];
     const begin = tokenizer.current;
     if (begin.type !== "punctuator" || begin.value !== "(") {
-        throw new UnexpectedTokenError("ArgumentList", "(", begin);
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ArgumentList", "(", begin));
     }
     const token = tokenizer.next();
     if (token.type === "punctuator" && token.value === ")") {
@@ -2057,7 +2184,7 @@ function parseArgumentList(tokenizer: Tokenizer): AssignmentExpression[] {
             return argumentList;
         }
         if (endOrComma.type !== "punctuator" && endOrComma.value !== ",") {
-            throw new UnexpectedTokenError("ArgumentList", ",", endOrComma);
+            throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ArgumentList", ",", endOrComma));
         }
         tokenizer.next();
     }
@@ -2462,7 +2589,9 @@ function parseConditionalExpression(tokenizer: Tokenizer): ConditionalExpression
         tokenizer.next();
         const thenExpression = parseAssignmentExpression(tokenizer);
         if (tokenizer.current.type !== "punctuator" || tokenizer.current.value !== ":") {
-            throw new UnexpectedTokenError("ConditionalExpression", ":", tokenizer.current);
+            throw new InterpreterSyntaxError(
+                ...formatUnexpectedTokenError("ConditionalExpression", ":", tokenizer.current)
+            );
         }
         tokenizer.next();
         return {
@@ -2771,8 +2900,9 @@ function getType(value: Value): "undefined" | "null" | "boolean" | "number" | "s
         case "boolean":
         case "undefined":
             return type;
-        default:
-            throw new Error("unreachable");
+        default: {
+            throw new Error("unreachable: " + type);
+        }
     }
 }
 
@@ -2879,8 +3009,10 @@ function toObject(intrinsics: Intrinsics, value: Value, ctx: Context, caller: Ca
         case "bigint":
         case "symbol":
         case "function":
-        default:
-            throw new Error("unreachable");
+        default: {
+            const v: never = value;
+            throw new Error("unreachable: " + typeof v);
+        }
     }
 }
 
@@ -2999,7 +3131,7 @@ function* callObject(
 ): Generator<unknown, Value> {
     const call = obj.internalProperties.call;
     if (call == null) {
-        throw new Error("call");
+        throw new InterpreterTypeError("not callable", ctx, caller);
     }
     return yield* call(ctx, self, args, caller);
 }
@@ -3114,7 +3246,7 @@ function toInteger(n: number): number {
     return Math.trunc(n);
 }
 
-function toBoolean(value: Value): boolean {
+export function toBoolean(value: Value): boolean {
     if (value === undefined || value === null) {
         return false;
     }
@@ -3147,7 +3279,7 @@ function* constructFunction(ctx: Context, args: Value[], caller: Caller): Genera
     const tokenizer = new Tokenizer(argsStrings.join(","));
     const parameters = parseFormalParameterList(tokenizer);
     if (tokenizer.current.type !== "end") {
-        throw new Error("Function: illegal arguments: " + argsStrings.join(","));
+        throw new InterpreterTypeError("Function: illegal arguments: " + argsStrings.join(","), ctx, caller); // FIXME
     }
     let block: Block;
     try {
@@ -3157,7 +3289,14 @@ function* constructFunction(ctx: Context, args: Value[], caller: Caller): Genera
             { name: "anonymous", source: body }
         );
     } catch (e) {
-        throw new InterpreterTypeError(`Function: failed to parse function body: ${e}`, ctx, caller); // FIXME
+        if (e instanceof InterpreterSyntaxError) {
+            throw new InterpreterSyntaxError(
+                `Function: failed to parse function body: ${e}`,
+                walkStackTrace(ctx, caller),
+                { cause: e }
+            );
+        }
+        throw e;
     }
     return newFunction(ctx, "anonymous", parameters, block);
 }
@@ -3193,10 +3332,10 @@ function* putArrayProperty(
         const integer = toInteger(num);
         const uint32 = toUint32(num);
         if (integer !== uint32) {
-            throw new RangeError("Invalid array length");
+            throw new InterpreterRangeError(`Invalid array length: ${num}`, ctx, caller);
         }
         if (typeof desc.value !== "number") {
-            throw new Error();
+            throw new InterpreterRangeError(`Invalid array length type: ${getType(desc.value)}`, ctx, caller);
         }
         for (const key of self.properties.keys()) {
             if (!isArrayIndex(key)) {
@@ -3215,7 +3354,7 @@ function* putArrayProperty(
     const lengthProp = self.properties.get("length");
     const p = toUint32(Number(propertyName));
     if (typeof lengthProp?.value !== "number") {
-        throw new Error();
+        throw new InterpreterRangeError(`Invalid array length: ${lengthProp?.value}`, ctx, caller);
     }
     if (p < lengthProp.value) {
         return;
@@ -3223,13 +3362,13 @@ function* putArrayProperty(
     lengthProp.value = p + 1;
 }
 
-function* arrayConstructor(ctx: Context, args: Value[]): Generator<unknown, Value> {
+function* arrayConstructor(ctx: Context, args: Value[], caller: Caller): Generator<unknown, Value> {
     let len;
     let elements: Value[];
     if (args.length === 1 && typeof args[0] === "number") {
         len = toUint32(args[0]);
         if (args[0] !== len) {
-            throw new RangeError("Invalid array length");
+            throw new InterpreterRangeError(`Invalid array length: ${len}`, ctx, caller);
         }
         elements = [];
     } else {
@@ -3274,7 +3413,7 @@ function* arrayPrototypeJoin(
     caller: Caller
 ): Generator<unknown, Value> {
     if (self == null) {
-        throw new Error("Array.prototype.join: this == null");
+        throw new InterpreterTypeError("Array.prototype.join: this == null", ctx, caller);
     }
     const length = toUint32(yield* toNumber(ctx, yield* getProperty(ctx, self, "length", caller), caller));
     const separator = args[0] === undefined ? "," : yield* toString(ctx, args[0], caller);
@@ -3312,7 +3451,7 @@ function* arrayPrototypeReverse(
     caller: Caller
 ): Generator<unknown, Value> {
     if (self == null) {
-        throw new Error("Array.prototype.reverse: this == null");
+        throw new InterpreterTypeError("Array.prototype.reverse: this == null", ctx, caller);
     }
     const length = toUint32(yield* toNumber(ctx, yield* getProperty(ctx, self, "length", caller), caller));
     const mid = length >>> 1;
@@ -3444,7 +3583,7 @@ function* arrayPrototypeSort(
     caller: Caller
 ): Generator<unknown, Value> {
     if (self == null) {
-        throw new Error("Array.prototype.sort: this == null");
+        throw new InterpreterTypeError("Array.prototype.sort: this == null", ctx, caller);
     }
     const comparefn = args[0];
     const call = isObject(comparefn) ? comparefn.internalProperties.call : undefined;
@@ -3797,10 +3936,10 @@ function createIntrinsics(): Intrinsics {
             function* stringSplit(ctx, self, args, caller) {
                 const str = yield* toString(ctx, self, caller);
                 if (args[0] === undefined) {
-                    return yield* arrayConstructor(ctx, [str]);
+                    return yield* arrayConstructor(ctx, [str], caller);
                 }
                 const separator = yield* toString(ctx, args[0], caller);
-                return yield* arrayConstructor(ctx, str.split(separator));
+                return yield* arrayConstructor(ctx, str.split(separator), caller);
             },
             1
         ),
@@ -4034,8 +4173,8 @@ function createIntrinsics(): Intrinsics {
     };
     const array = newNativeFunction(
         functionPrototype,
-        function* arrayConstruct(ctx, _self, args) {
-            return yield* arrayConstructor(ctx, args);
+        function* arrayConstruct(ctx, _self, args, caller) {
+            return yield* arrayConstructor(ctx, args, caller);
         },
         1
     );
@@ -4101,7 +4240,14 @@ function createIntrinsics(): Intrinsics {
             try {
                 program = parse(source, { name: "eval code", source });
             } catch (e) {
-                throw new InterpreterTypeError(`eval: failed to parse program: ${e}`, ctx, caller); // FIXME
+                if (e instanceof InterpreterSyntaxError) {
+                    throw new InterpreterSyntaxError(
+                        `eval: failed to parse program: ${e}`,
+                        walkStackTrace(ctx, caller),
+                        { cause: e }
+                    );
+                }
+                throw e;
             }
             const completion = yield* run(program, context);
             if (completion.type === "normalCompletion" && completion.hasValue) {
@@ -5281,16 +5427,19 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                     return result;
                 }
                 default:
-                    const _: never = expression.operator;
-                    throw new Error("unreachable");
+                    const o: never = expression.operator;
+                    throw new Error("unreachable: " + o);
             }
         }
         case "commaOperator": {
             yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.left), expression);
             return yield* referenceGetValue(ctx, yield* evaluateExpression(ctx, expression.right), expression.right);
         }
+        default: {
+            const e: never = expression;
+            throw new Error("unreachable: " + e);
+        }
     }
-    throw new Error();
 }
 
 function* runVariableDeclaration(ctx: Context, declaration: VariableDeclaration): Generator<unknown, void> {
@@ -5554,8 +5703,8 @@ function* runStatement(ctx: Context, statement: Statement): Generator<unknown, C
         case "withStatement":
             return yield* runWithStatement(ctx, statement);
         default:
-            const _: never = statement;
-            throw new Error("unreachable " + statement);
+            const s: never = statement;
+            throw new Error("unreachable: " + s);
     }
 }
 
