@@ -213,6 +213,7 @@ return/*
             },
         },
     ] satisfies Token[]);
+    expect([...tokenize(String.raw`/* * _ / */`)]).toMatchObject([]);
 });
 
 function omitPosition(p: any): any {
@@ -4833,6 +4834,37 @@ Number.prototype.hoge = 1;
         type: "normalCompletion",
         hasValue: true,
         value: false,
+    });
+    expect(await runAsync(String.raw`null == Object.undef`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(await runAsync(String.raw`Object.undef == null`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+
+    expect(await runAsync(String.raw`null != Object`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: !false,
+    });
+    expect(await runAsync(String.raw`Object != null`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: !false,
+    });
+    expect(await runAsync(String.raw`null != Object.undef`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: !true,
+    });
+    expect(await runAsync(String.raw`Object.undef != null`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: !true,
     });
 });
 

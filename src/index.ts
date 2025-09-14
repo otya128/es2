@@ -486,7 +486,7 @@ function parseMultiLineComment(reader: Reader): boolean {
                     if (isLineTerminator(char)) {
                         hasLineTerminator = true;
                     }
-                    continue;
+                    break;
                 }
                 if (char === "*") {
                     continue;
