@@ -218,25 +218,6 @@ export type EndToken = {
 };
 export type Token = ReservedWord | Identifier | Punctuator | NumericLiteral | StringLiteral | LineTerminator | EndToken;
 
-class UnexpectedCharacterError extends Error {
-    constructor(syntax: string, expected: string, actual: string, position: Position) {
-        if (actual === "") {
-            actual = "<EOF>";
-        } else if (actual === "\n") {
-            actual = "<LF>";
-        } else if (actual === "\b") {
-            actual = "<BS>";
-        } else if (actual === "\t") {
-            actual = "<HT>";
-        } else if (actual === "\f") {
-            actual = "<FF>";
-        } else if (actual === "\r") {
-            actual = "<CR>";
-        }
-        super(`${syntax}: Expected ${expected}, Actual: ${actual}, ${position.line}:${position.column}`);
-    }
-}
-
 function formatUnexpectedCharacterError(
     syntax: string,
     expected: string,
@@ -294,7 +275,8 @@ function formatSyntaxError(
     });
     return [`${syntax}: ${message}`, stackTrace, options];
 }
-class InterpreterSyntaxError extends Error {
+
+export class InterpreterSyntaxError extends Error {
     stackTrace?: StackTraceEntry[];
     constructor(message: string, stackTrace: StackTraceEntry[], options?: ErrorOptions) {
         super(`${message}\n${stackTrace.map(stackTraceToString).join("\n")}`, options);
@@ -306,7 +288,7 @@ function stackTraceToString(s: StackTraceEntry): string {
     return `${s.name} (${s.start.sourceInfo?.name}:${s.start.line})`;
 }
 
-class InterpreterReferenceError extends Error {
+export class InterpreterReferenceError extends Error {
     stackTrace: StackTraceEntry[];
     constructor(message: string, context: Context, caller: Caller) {
         const stackTrace = walkStackTrace(context, caller);
@@ -315,7 +297,7 @@ class InterpreterReferenceError extends Error {
     }
 }
 
-class InterpreterTypeError extends Error {
+export class InterpreterTypeError extends Error {
     stackTrace: StackTraceEntry[];
     constructor(message: string, context: Context, caller: Caller) {
         const stackTrace = walkStackTrace(context, caller);
@@ -324,7 +306,7 @@ class InterpreterTypeError extends Error {
     }
 }
 
-class InterpreterRangeError extends Error {
+export class InterpreterRangeError extends Error {
     stackTrace: StackTraceEntry[];
     constructor(message: string, context: Context, caller: Caller) {
         const stackTrace = walkStackTrace(context, caller);
@@ -2823,6 +2805,7 @@ export type InterpreterObject = {
         ) => Generator<unknown, Value>;
         construct?: (ctx: Context, args: Value[], caller: Caller) => Generator<unknown, Value>;
         call?: NativeFunction;
+        hostObjectValue?: any;
     };
     properties: Map<string, Property>;
 };
@@ -2859,7 +2842,8 @@ function defaultPutProperty(ctx: Context, self: InterpreterObject, propertyName:
         });
     }
 }
-function* putProperty(
+
+export function* putProperty(
     ctx: Context,
     self: InterpreterObject,
     propertyName: string,
@@ -2873,7 +2857,7 @@ function* putProperty(
     return;
 }
 
-function isPrimitive(value: Value): value is PrimitiveValue {
+export function isPrimitive(value: Value): value is PrimitiveValue {
     return (
         value === undefined ||
         value === null ||
@@ -2920,7 +2904,7 @@ function getNumberObjectValue(value: Value): number | undefined {
     }
 }
 
-function getDateObjectValue(value: Value): number | undefined {
+export function getDateObjectValue(value: Value): number | undefined {
     if (
         isObject(value) &&
         value.internalProperties.class === "Date" &&
@@ -3085,7 +3069,12 @@ export function newNativeFunction(
     };
 }
 
-function* getProperty(ctx: Context, value: InterpreterObject, name: string, caller: Caller): Generator<unknown, Value> {
+export function* getProperty(
+    ctx: Context,
+    value: InterpreterObject,
+    name: string,
+    caller: Caller
+): Generator<unknown, Value> {
     let o: InterpreterObject | null = value;
     while (o != null) {
         if (o.properties.has(name)) {
@@ -3362,7 +3351,11 @@ function* putArrayProperty(
     lengthProp.value = p + 1;
 }
 
-function* arrayConstructor(ctx: Context, args: Value[], caller: Caller): Generator<unknown, Value> {
+export function newArray(ctx: Context, args: Value[], caller: Caller): Generator<unknown, InterpreterObject> {
+    return arrayConstructor(ctx, args, caller);
+}
+
+function* arrayConstructor(ctx: Context, args: Value[], caller: Caller): Generator<unknown, InterpreterObject> {
     let len;
     let elements: Value[];
     if (args.length === 1 && typeof args[0] === "number") {
@@ -3595,6 +3588,17 @@ function* arrayPrototypeSort(
     return self;
 }
 
+export function newDate(ctx: Context, date: Date): InterpreterObject {
+    return {
+        internalProperties: {
+            prototype: ctx.realm.intrinsics.DatePrototype,
+            class: "Date",
+            value: date.valueOf(),
+        },
+        properties: new Map([]),
+    };
+}
+
 function* dateConstructor(ctx: Context, args: Value[], caller: Caller): Generator<unknown, Value> {
     args.length = Math.min(7, args.length);
     let value: Date;
@@ -3612,15 +3616,7 @@ function* dateConstructor(ctx: Context, args: Value[], caller: Caller): Generato
         }
         value = new Date(...(numbers as []));
     }
-    const date: InterpreterObject = {
-        internalProperties: {
-            prototype: ctx.realm.intrinsics.DatePrototype,
-            class: "Date",
-            value: value.valueOf(),
-        },
-        properties: new Map([]),
-    };
-    return date;
+    return newDate(ctx, value);
 }
 
 function* dateUTC(ctx: Context, _self: Value, args: Value[], caller: Caller): Generator<unknown, Value> {
@@ -5894,7 +5890,7 @@ export function createGlobalContext(): Context {
     return context;
 }
 
-function* run(program: Program, context: Context): Generator<unknown, Completion> {
+export function* run(program: Program, context: Context): Generator<unknown, Completion> {
     let completion: Completion = {
         type: "normalCompletion",
         hasValue: false,
