@@ -3351,8 +3351,35 @@ function* putArrayProperty(
     lengthProp.value = p + 1;
 }
 
-export function newArray(ctx: Context, args: Value[], caller: Caller): Generator<unknown, InterpreterObject> {
-    return arrayConstructor(ctx, args, caller);
+export function newArray(ctx: Context, elements: Value[], length?: number): InterpreterObject {
+    return {
+        internalProperties: {
+            prototype: ctx.realm.intrinsics.ArrayPrototype,
+            class: "Array",
+            value: undefined,
+            put: putArrayProperty,
+        },
+        properties: new Map([
+            [
+                "length",
+                {
+                    readOnly: false,
+                    dontEnum: true,
+                    dontDelete: true,
+                    value: length ?? elements.length,
+                },
+            ],
+            ...elements.map((value, i): [string, Property] => [
+                String(i),
+                {
+                    readOnly: false,
+                    dontEnum: false,
+                    dontDelete: false,
+                    value,
+                },
+            ]),
+        ]),
+    };
 }
 
 function* arrayConstructor(ctx: Context, args: Value[], caller: Caller): Generator<unknown, InterpreterObject> {
@@ -3368,35 +3395,7 @@ function* arrayConstructor(ctx: Context, args: Value[], caller: Caller): Generat
         len = args.length;
         elements = args;
     }
-    const array: InterpreterObject = {
-        internalProperties: {
-            prototype: ctx.realm.intrinsics.ArrayPrototype,
-            class: "Array",
-            value: undefined,
-            put: putArrayProperty,
-        },
-        properties: new Map([
-            [
-                "length",
-                {
-                    readOnly: false,
-                    dontEnum: true,
-                    dontDelete: true,
-                    value: len,
-                },
-            ],
-            ...elements.map((value, i): [string, Property] => [
-                String(i),
-                {
-                    readOnly: false,
-                    dontEnum: false,
-                    dontDelete: false,
-                    value,
-                },
-            ]),
-        ]),
-    };
-    return array;
+    return newArray(ctx, elements, len);
 }
 
 function* arrayPrototypeJoin(
