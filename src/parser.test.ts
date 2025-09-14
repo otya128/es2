@@ -4824,6 +4824,16 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: "[object Object]",
     });
+    expect(await runAsync(String.raw`null == Object`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(await runAsync(String.raw`Object == null`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
 });
 
 test("error message", async () => {

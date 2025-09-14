@@ -4798,7 +4798,7 @@ function* compareValue(
 }
 
 function* equalsValue(ctx: Context, x: Value, y: Value, caller: Caller): Generator<unknown, boolean | undefined> {
-    if (typeof x === typeof y) {
+    if (getType(x) === getType(y)) {
         if (typeof x === "undefined") {
             return true;
         }
