@@ -4418,7 +4418,7 @@ function createIntrinsics(): Intrinsics {
                 }
                 return new Date(value).toString();
             },
-            1
+            0
         ),
     });
     for (const f of [
