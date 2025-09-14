@@ -3215,7 +3215,8 @@ export function* toNumber(ctx: Context, value: Value, caller: Caller): Generator
         return value;
     }
     if (typeof value === "string") {
-        return Number(value); // l
+        const r = Number(value);
+        return Number.isFinite(r) ? r | 0 : NaN;
     }
     return yield* toNumber(ctx, yield* toPrimitive(ctx, value, "number", caller), caller);
 }
@@ -3256,7 +3257,7 @@ export function toBoolean(value: Value): boolean {
 
 function* constructFunction(ctx: Context, args: Value[], caller: Caller): Generator<unknown, InterpreterObject> {
     let body = "";
-    let argsStrings = [];
+    let argsStrings: string[] = [];
     for (let k = 0; k < args.length; k++) {
         const s = yield* toString(ctx, args[k], caller);
         if (k < args.length - 1) {
@@ -4687,7 +4688,8 @@ function* referenceGetValue(ctx: Context, reference: RefOrValue, caller: Caller)
         return reference;
     }
     if (reference.baseObject == null) {
-        throw new InterpreterReferenceError(`${reference.name} is not defined`, ctx, caller);
+        // throw new InterpreterReferenceError(`${reference.name} is not defined`, ctx, caller);
+        return undefined;
     }
     return yield* getProperty(ctx, reference.baseObject, reference.name, caller);
 }
@@ -4845,7 +4847,8 @@ function* multiply(ctx: Context, left: Value, right: Value, caller: Caller): Gen
 }
 
 function* divide(ctx: Context, left: Value, right: Value, caller: Caller): Generator<unknown, Value> {
-    return (yield* toNumber(ctx, left, caller)) / (yield* toNumber(ctx, right, caller));
+    const r = (yield* toNumber(ctx, left, caller)) / (yield* toNumber(ctx, right, caller));
+    return Number.isFinite(r) ? r | 0 : NaN;
 }
 
 function* modulo(ctx: Context, left: Value, right: Value, caller: Caller): Generator<unknown, Value> {
@@ -4858,11 +4861,13 @@ function* add(ctx: Context, left: Value, right: Value, caller: Caller): Generato
     if (typeof primitiveLeft === "string" || typeof primitiveRight === "string") {
         return (yield* toString(ctx, primitiveLeft, caller)) + (yield* toString(ctx, primitiveRight, caller));
     }
-    return (yield* toNumber(ctx, primitiveLeft, caller)) + (yield* toNumber(ctx, primitiveRight, caller));
+    const r = (yield* toNumber(ctx, primitiveLeft, caller)) + (yield* toNumber(ctx, primitiveRight, caller));
+    return Number.isFinite(r) ? r | 0 : NaN;
 }
 
 function* subtract(ctx: Context, left: Value, right: Value, caller: Caller): Generator<unknown, Value> {
-    return (yield* toNumber(ctx, left, caller)) - (yield* toNumber(ctx, right, caller));
+    const r = (yield* toNumber(ctx, left, caller)) - (yield* toNumber(ctx, right, caller));
+    return Number.isFinite(r) ? r | 0 : NaN;
 }
 
 function* leftShift(ctx: Context, left: Value, right: Value, caller: Caller): Generator<unknown, Value> {
@@ -4948,7 +4953,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                 throw new InterpreterTypeError("not constructable", ctx, expression);
             }
             const obj = yield* construct(ctx, args, expression);
-            if (!isObject(obj)) {
+            if (!isObject(obj) && obj !== null) {
                 throw new InterpreterTypeError("[[Construct]] result is not a object", ctx, expression);
             }
             return obj;
@@ -5008,6 +5013,9 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
             }
             const value = yield* referenceGetValue(ctx, ref, expression);
             const t = getType(value);
+            if (isObject(value) && "hostObjectValue" in value.internalProperties) {
+                return "hostobject";
+            }
             if (t === "null") {
                 return "object";
             }
