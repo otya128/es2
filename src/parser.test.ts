@@ -3268,7 +3268,7 @@ Number.prototype.hoge = 1;
     ).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
-        value: "Function", // FIXME
+        value: "function anonymous() {}",
     });
     expect(
         await runAsync(String.raw`

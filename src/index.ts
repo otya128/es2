@@ -2813,6 +2813,7 @@ export type InterpreterObject = {
         ) => Generator<unknown, Value>;
         construct?: (ctx: Context, args: Value[], caller: Caller) => Generator<unknown, Value>;
         call?: NativeFunction;
+        functionTag?: string | undefined;
         hostObjectValue?: any;
     };
     properties: Map<string, Property>;
@@ -3062,7 +3063,8 @@ function newBooleanObject(prototype: InterpreterObject, value: boolean): Interpr
 export function newNativeFunction(
     prototype: InterpreterObject,
     func: NativeFunction,
-    length: number
+    length: number,
+    name?: string
 ): InterpreterObject {
     return {
         internalProperties: {
@@ -3070,6 +3072,7 @@ export function newNativeFunction(
             class: "Function",
             value: undefined,
             call: func,
+            functionTag: `function ${name}() {}`,
         },
         properties: new Map([
             [
@@ -3763,14 +3766,13 @@ function createIntrinsics(): Intrinsics {
         value: newNativeFunction(
             functionPrototype,
             function* functionToString(ctx, self, _args, caller) {
-                // FIXME: improve function detection
                 if (self?.internalProperties.call == null) {
                     throw new InterpreterTypeError("this must be Function", ctx, caller);
                 }
-                // FIXME
-                return "Function";
+                return self.internalProperties.functionTag ?? "function anonymous() {}";
             },
-            1
+            1,
+            "toString"
         ),
     });
     objectPrototype.properties.set("constructor", {
@@ -3794,7 +3796,8 @@ function createIntrinsics(): Intrinsics {
                 }
                 return `[object ${self.internalProperties.class}]`;
             },
-            0
+            0,
+            "toString"
         ),
     });
     objectPrototype.properties.set("valueOf", {
@@ -3807,7 +3810,8 @@ function createIntrinsics(): Intrinsics {
                 // FIXME: host object
                 return self;
             },
-            0
+            0,
+            "valueOf"
         ),
     });
     const string = newNativeFunction(
@@ -3818,7 +3822,8 @@ function createIntrinsics(): Intrinsics {
             }
             return yield* toString(ctx, args[0], caller);
         },
-        1
+        1,
+        "String"
     );
     string.internalProperties.construct = function* stringConstructor(ctx, args, caller: Caller) {
         const value = args.length === 0 ? "" : yield* toString(ctx, args[0], caller);
@@ -3837,7 +3842,8 @@ function createIntrinsics(): Intrinsics {
                 }
                 return String.fromCharCode(...codes);
             },
-            1
+            1,
+            "fromCharCode"
         ),
     });
     const stringPrototype = newStringObject(objectPrototype, "");
@@ -3863,7 +3869,8 @@ function createIntrinsics(): Intrinsics {
                 }
                 return self.internalProperties.value;
             },
-            1
+            1,
+            "toString"
         ),
     });
     stringPrototype.properties.set("valueOf", {
@@ -3878,7 +3885,8 @@ function createIntrinsics(): Intrinsics {
                 }
                 return self.internalProperties.value;
             },
-            1
+            1,
+            "valueOf"
         ),
     });
     stringPrototype.properties.set("charAt", {
@@ -3892,7 +3900,8 @@ function createIntrinsics(): Intrinsics {
                 const pos = yield* toNumber(ctx, args[0], caller);
                 return str.charAt(pos); // l
             },
-            1
+            1,
+            "charAt"
         ),
     });
     stringPrototype.properties.set("charCodeAt", {
@@ -3906,7 +3915,8 @@ function createIntrinsics(): Intrinsics {
                 const pos = yield* toNumber(ctx, args[0], caller);
                 return str.charCodeAt(pos); // l
             },
-            1
+            1,
+            "charCodeAt"
         ),
     });
     stringPrototype.properties.set("indexOf", {
@@ -3921,7 +3931,8 @@ function createIntrinsics(): Intrinsics {
                 const position = args[1] === undefined ? 0 : toInteger(yield* toNumber(ctx, args[1], caller));
                 return str.indexOf(searchStr, position); // l
             },
-            1
+            1,
+            "indexOf"
         ),
     });
     stringPrototype.properties.set("lastIndexOf", {
@@ -3936,7 +3947,8 @@ function createIntrinsics(): Intrinsics {
                 const position = args[1] === undefined ? NaN : toInteger(yield* toNumber(ctx, args[1], caller));
                 return str.lastIndexOf(searchStr, position); // l
             },
-            1
+            1,
+            "lastIndexOf"
         ),
     });
     stringPrototype.properties.set("split", {
@@ -3953,7 +3965,8 @@ function createIntrinsics(): Intrinsics {
                 const separator = yield* toString(ctx, args[0], caller);
                 return yield* arrayConstructor(ctx, str.split(separator), caller);
             },
-            1
+            1,
+            "split"
         ),
     });
     stringPrototype.properties.set("substring", {
@@ -3968,7 +3981,8 @@ function createIntrinsics(): Intrinsics {
                 const end = args[1] == undefined ? undefined : toInteger(yield* toNumber(ctx, args[1], caller));
                 return str.substring(start, end);
             },
-            2
+            2,
+            "substring"
         ),
     });
     stringPrototype.properties.set("toLowerCase", {
@@ -3981,7 +3995,8 @@ function createIntrinsics(): Intrinsics {
                 const str = yield* toString(ctx, self, caller);
                 return str.toLowerCase();
             },
-            1
+            1,
+            "toLowerCase"
         ),
     });
     stringPrototype.properties.set("toUpperCase", {
@@ -3994,7 +4009,8 @@ function createIntrinsics(): Intrinsics {
                 const str = yield* toString(ctx, self, caller);
                 return str.toUpperCase();
             },
-            1
+            1,
+            "toUpperCase"
         ),
     });
     string.properties.set("prototype", {
@@ -4011,7 +4027,8 @@ function createIntrinsics(): Intrinsics {
             }
             return yield* toNumber(ctx, args[0], caller);
         },
-        1
+        1,
+        "Number"
     );
     number.internalProperties.construct = function* numberConstructor(ctx, args, caller) {
         const value = args.length === 0 ? 0 : yield* toNumber(ctx, args[0], caller);
@@ -4073,7 +4090,8 @@ function createIntrinsics(): Intrinsics {
                 // throws RnageError
                 return value.toString(radix); // l
             },
-            1
+            1,
+            "toString"
         ),
     });
     numberPrototype.properties.set("valueOf", {
@@ -4089,7 +4107,8 @@ function createIntrinsics(): Intrinsics {
                 }
                 return value;
             },
-            1
+            1,
+            "valueOf"
         ),
     });
     number.properties.set("prototype", {
@@ -4106,7 +4125,8 @@ function createIntrinsics(): Intrinsics {
             }
             return toBoolean(args[0]);
         },
-        1
+        1,
+        "Boolean"
     );
     boolean.internalProperties.construct = function* booleanConstruct(ctx, args) {
         const value = args.length === 0 ? false : toBoolean(args[0]);
@@ -4136,7 +4156,8 @@ function createIntrinsics(): Intrinsics {
                 const value = self.internalProperties.value;
                 return value ? "true" : "false";
             },
-            1
+            1,
+            "toString"
         ),
     });
     booleanPrototype.properties.set("valueOf", {
@@ -4155,7 +4176,8 @@ function createIntrinsics(): Intrinsics {
                 }
                 return self.internalProperties.value;
             },
-            1
+            1,
+            "valueOf"
         ),
     });
     boolean.properties.set("prototype", {
@@ -4188,7 +4210,8 @@ function createIntrinsics(): Intrinsics {
         function* arrayConstruct(ctx, _self, args, caller) {
             return yield* arrayConstructor(ctx, args, caller);
         },
-        1
+        1,
+        "Array"
     );
     array.internalProperties.construct = arrayConstructor;
     arrayPrototype.properties.set("constructor", {
@@ -4201,25 +4224,25 @@ function createIntrinsics(): Intrinsics {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        value: newNativeFunction(functionPrototype, arrayPrototypeToString, 0),
+        value: newNativeFunction(functionPrototype, arrayPrototypeToString, 0, "toString"),
     });
     arrayPrototype.properties.set("join", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        value: newNativeFunction(functionPrototype, arrayPrototypeJoin, 1),
+        value: newNativeFunction(functionPrototype, arrayPrototypeJoin, 1, "join"),
     });
     arrayPrototype.properties.set("reverse", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        value: newNativeFunction(functionPrototype, arrayPrototypeReverse, 0),
+        value: newNativeFunction(functionPrototype, arrayPrototypeReverse, 0, "reverse"),
     });
     arrayPrototype.properties.set("sort", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        value: newNativeFunction(functionPrototype, arrayPrototypeSort, 1),
+        value: newNativeFunction(functionPrototype, arrayPrototypeSort, 1, "sort"),
     });
     array.properties.set("prototype", {
         readOnly: true,
@@ -4267,7 +4290,8 @@ function createIntrinsics(): Intrinsics {
             }
             return undefined;
         },
-        1
+        1,
+        "eval"
     );
     const parseIntFunction = newNativeFunction(
         functionPrototype,
@@ -4276,7 +4300,8 @@ function createIntrinsics(): Intrinsics {
             const radix = yield* toNumber(ctx, args[1], caller);
             return parseInt(string, radix); // l
         },
-        2
+        2,
+        "parseInt"
     );
     const parseFloatFunction = newNativeFunction(
         functionPrototype,
@@ -4284,7 +4309,8 @@ function createIntrinsics(): Intrinsics {
             const string = yield* toString(ctx, args[0], caller);
             return parseFloat(string); // l
         },
-        1
+        1,
+        "parseFloat"
     );
     const escapeFunction = newNativeFunction(
         functionPrototype,
@@ -4292,7 +4318,8 @@ function createIntrinsics(): Intrinsics {
             const string = yield* toString(ctx, args[0], caller);
             return escape(string); // l
         },
-        1
+        1,
+        "escape"
     );
     const unescapeFunction = newNativeFunction(
         functionPrototype,
@@ -4300,7 +4327,8 @@ function createIntrinsics(): Intrinsics {
             const string = yield* toString(ctx, args[0], caller);
             return unescape(string); // l
         },
-        1
+        1,
+        "unescape"
     );
     const isNaNFunction = newNativeFunction(
         functionPrototype,
@@ -4308,7 +4336,8 @@ function createIntrinsics(): Intrinsics {
             const number = yield* toNumber(ctx, args[0], caller);
             return isNaN(number);
         },
-        1
+        1,
+        "isNaN"
     );
     const isFiniteFunction = newNativeFunction(
         functionPrototype,
@@ -4316,7 +4345,8 @@ function createIntrinsics(): Intrinsics {
             const number = yield* toNumber(ctx, args[0], caller);
             return isFinite(number);
         },
-        1
+        1,
+        "isFinite"
     );
     const math = newObject(objectPrototype);
     math.internalProperties.class = "Math";
@@ -4338,7 +4368,8 @@ function createIntrinsics(): Intrinsics {
                 function* mathWrapper(_ctx, _self, _args) {
                     return Math[a]();
                 },
-                0
+                0,
+                a
             ),
         });
     }
@@ -4367,7 +4398,8 @@ function createIntrinsics(): Intrinsics {
                     const a0 = yield* toNumber(ctx, args[0], caller);
                     return Math[a](a0);
                 },
-                1
+                1,
+                a
             ),
         });
     }
@@ -4383,7 +4415,8 @@ function createIntrinsics(): Intrinsics {
                     const a1 = yield* toNumber(ctx, args[1], caller);
                     return Math[a](a0, a1);
                 },
-                2
+                2,
+                a
             ),
         });
     }
@@ -4392,14 +4425,15 @@ function createIntrinsics(): Intrinsics {
         function* date(_ctx, _self, _args) {
             return new Date().toString();
         },
-        7
+        7,
+        "Date"
     );
     date.internalProperties.construct = dateConstructor;
     date.properties.set("UTC", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        value: newNativeFunction(functionPrototype, dateUTC, 7),
+        value: newNativeFunction(functionPrototype, dateUTC, 7, "UTC"),
     });
     date.properties.set("parse", {
         readOnly: false,
@@ -4411,7 +4445,8 @@ function createIntrinsics(): Intrinsics {
                 const string = yield* toString(ctx, args[0], caller);
                 return Date.parse(string);
             },
-            1
+            1,
+            "parse"
         ),
     });
     const datePrototype: InterpreterObject = newObject(objectPrototype);
@@ -4434,7 +4469,8 @@ function createIntrinsics(): Intrinsics {
                 }
                 return new Date(value).toString();
             },
-            0
+            0,
+            "toString"
         ),
     });
     for (const f of [
@@ -4473,7 +4509,8 @@ function createIntrinsics(): Intrinsics {
                     }
                     return new Date(value)[f]();
                 },
-                0
+                0,
+                f
             ),
         });
     }
@@ -4513,7 +4550,8 @@ function createIntrinsics(): Intrinsics {
                     self.internalProperties.value = new Date(value)[f](...(numbers as [number]));
                     return self.internalProperties.value;
                 },
-                length
+                length,
+                f
             ),
         });
     }
@@ -4530,7 +4568,8 @@ function createIntrinsics(): Intrinsics {
                 }
                 return new Date(value).getFullYear() - 1900;
             },
-            0
+            0,
+            "getYear"
         ),
     });
     datePrototype.properties.set("toGMTString", {
@@ -4546,7 +4585,8 @@ function createIntrinsics(): Intrinsics {
                 }
                 return new Date(value).toUTCString();
             },
-            0
+            0,
+            "toGMTString"
         ),
     });
     datePrototype.properties.set("setYear", {
@@ -4563,7 +4603,8 @@ function createIntrinsics(): Intrinsics {
                 const year = yield* toNumber(ctx, args[0], caller);
                 return new Date(value).setFullYear(year);
             },
-            2
+            2,
+            "setYear"
         ),
     });
     date.properties.set("prototype", {
@@ -5845,7 +5886,7 @@ function newFunction(ctx: Context, name: string, parameters: string[], block: Bl
         }
         return undefined;
     }
-    const func = newNativeFunction(ctx.realm.intrinsics.FunctionPrototype, call, parameters.length);
+    const func = newNativeFunction(ctx.realm.intrinsics.FunctionPrototype, call, parameters.length, name);
     const prototype = newObject(ctx.realm.intrinsics.ObjectPrototype);
     func.properties.set("prototype", {
         readOnly: false,
