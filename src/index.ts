@@ -4598,7 +4598,7 @@ function createIntrinsics(): Intrinsics {
             function* datePrototypeSetSeconds(ctx, self, args, caller) {
                 const value = getDateObjectValue(self);
                 if (value == null) {
-                    throw new InterpreterTypeError(`Date.prototype.setSeconds: this must be Date object`, ctx, caller);
+                    throw new InterpreterTypeError(`Date.prototype.setYear: this must be Date object`, ctx, caller);
                 }
                 const year = yield* toNumber(ctx, args[0], caller);
                 return new Date(value).setFullYear(year);
