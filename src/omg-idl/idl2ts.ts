@@ -140,7 +140,7 @@ export function define(context: Context, prototypes: Map<any, InterpreterObject>
             return wrap(prototypes, map, self.internalProperties.hostObjectValue.${decl.name}(${decl.parameters
                 .map((p, index) => convertParameter(p.typeSpec, `args[${index}]`))
                 .join(", ")})${decl.typeSpec === "void" ? " as undefined" : ""});
-        }, ${decl.parameters.length}),
+        }, ${decl.parameters.length}, "${decl.name}"),
     });
 `;
             } else if (decl.type === "attributeDeclaration") {
