@@ -1,3 +1,11 @@
+/*!
+ * ECMAScript 2nd Edition Interpreter
+ * <https://github.com/otya128/es2>
+ *
+ * SPDX-FileCopyrightText: 2025 otya
+ * SPDX-License-Identifier: MIT
+ */
+
 function isLineTerminator(char: string) {
     return char === "\n" || char === "\r";
 }
@@ -2927,10 +2935,18 @@ type Scope = {
     callingInfo: CallingInfo | undefined;
 };
 
+export type InterruptionState = Expression | Statement;
+
+export type Interruption = {
+    type: "interruption";
+    state: InterruptionState;
+};
+
 export type Context = {
     scope: Scope;
     this: InterpreterObject | null;
     realm: Realm;
+    shouldInterrupt?: (state: InterruptionState) => boolean;
 };
 
 type Intrinsics = {
@@ -4895,6 +4911,9 @@ function* bitwiseXor(ctx: Context, left: Value, right: Value, caller: Caller): G
 }
 
 function* evaluateExpression(ctx: Context, expression: Expression): Generator<unknown, RefOrValue> {
+    if (ctx.shouldInterrupt?.(expression)) {
+        yield { type: "interruption", state: expression } satisfies Interruption;
+    }
     switch (expression.type) {
         case "literalExpression":
             return expression.value;
@@ -5664,14 +5683,16 @@ function* runWithStatement(ctx: Context, statement: WithStatement): Generator<un
         callingInfo: ctx.scope.callingInfo,
     };
     const withContext: Context = {
+        ...ctx,
         scope: withScope,
-        this: ctx.this,
-        realm: ctx.realm,
     };
     return yield* runStatement(withContext, statement.statement);
 }
 
 function* runStatement(ctx: Context, statement: Statement): Generator<unknown, Completion> {
+    if (ctx.shouldInterrupt?.(statement)) {
+        yield { type: "interruption", state: statement } satisfies Interruption;
+    }
     switch (statement.type) {
         case "block":
             return yield* runBlock(ctx, statement);
@@ -5742,10 +5763,10 @@ function newFunction(ctx: Context, name: string, parameters: string[], block: Bl
             },
         };
         const context: Context = {
+            ...ctx,
             scope,
             // The caller provides the this value. If the this value provided by the caller is not an object (including the case where it is null), then the this value is the global object.
             this: isObject(self) ? self : ctx.realm.globalObject,
-            realm: ctx.realm,
         };
         const argumentsObject = newObject(ctx.realm.intrinsics.ObjectPrototype);
         argumentsObject.properties.set("callee", {
