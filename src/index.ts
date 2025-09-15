@@ -3499,7 +3499,7 @@ function* mergeSort(
     caller: Caller
 ): Generator<unknown, void> {
     const length = end - start;
-    if (length === 1) {
+    if (length <= 1) {
         return;
     }
     const mid = start + (length >>> 1);

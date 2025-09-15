@@ -4173,6 +4173,15 @@ Number.prototype.hoge = 1;
     });
     expect(
         await runAsync(String.raw`
+        new Array(0).sort().join()
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "",
+    });
+    expect(
+        await runAsync(String.raw`
         new Array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11).sort().join()
     `)
     ).toStrictEqual({
