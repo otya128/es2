@@ -2106,7 +2106,7 @@ function parseLeftHandSideExpression(tokenizer: Tokenizer): LeftHandSideExpressi
                 expression: left,
                 argumentList: parseArgumentList(tokenizer),
                 start: left.start,
-                end: tokenizer.prevPosition,
+                end: tokenizer.current.end,
             };
             const token = tokenizer.current;
             if (token.type !== "punctuator" || token.value !== ")") {
