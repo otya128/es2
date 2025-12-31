@@ -61,7 +61,7 @@ function toToplologicalSorted(definitions: Definition[]): Definition[] {
 export function idl2ts(definitions: Definition[], importPath: string, prefix?: string, preface?: string): string {
     prefix ??= "";
     let output = `// THIS IS A GENERATED FILE. DO NOT EDIT DIRECTLY.
-import { Caller, Context, InterpreterObject, InterpreterTypeError, isPrimitive, newNativeFunction, newObject, toBoolean, toNumber, toString, Value } from "${importPath}";
+import { Caller, Context, InterpreterObject, InterpreterTypeError, isPrimitive, newNativeFunction, newObject, toBoolean, toNumber, toString, Value, defaultPutProperty } from "${importPath}";
 ${preface ?? ""}
 export function define(context: Context, prototypes: Map<any, InterpreterObject>, map: WeakMap<any, InterpreterObject>) {\n`;
     definitions = toToplologicalSorted(definitions);
@@ -122,7 +122,7 @@ export function define(context: Context, prototypes: Map<any, InterpreterObject>
 `;
         } else {
             output += `        }
-        throw new InterpreterTypeError(\`${def.name}.prototype.\${propertyName}: Unknown property\`, ctx, caller);
+        defaultPutProperty(ctx, self, propertyName, value, caller);
     };
     $${def.name}$prototype.internalProperties.put = $${def.name}$put;
 `;
