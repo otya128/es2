@@ -5596,13 +5596,13 @@ function* runForInStatement(ctx: Context, statement: ForInStatement): Generator<
     const iterated = new Set<string>();
     while (true) {
         for (const [name, prop] of obj.properties) {
-            if (prop.dontEnum) {
-                continue;
-            }
             if (iterated.has(name)) {
                 continue;
             }
             iterated.add(name);
+            if (prop.dontEnum) {
+                continue;
+            }
             if (statement.initialization.type === "variableDeclaration") {
                 const ref = resolveIdentifier(ctx.scope, statement.initialization.name);
                 yield* referencePutValue(ctx, ref, name, statement.initialization);

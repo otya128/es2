@@ -2539,6 +2539,20 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: "hoge",
     });
+    expect(
+        await runAsync(String.raw`
+            Object.prototype.length = 2;
+            var count = 0;
+            for (var a in "") {
+                count++;
+            }
+            count;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
     expect(await runAsync(String.raw`for (var a in Object);`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: false,
