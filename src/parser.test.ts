@@ -3528,6 +3528,58 @@ Number.prototype.hoge = 1;
     });
     expect(
         await runAsync(String.raw`
+        function a(a1, a2) {
+            arguments[1] = 2;
+            return arguments[0] + "," + a1 + "," + arguments[1] + "," + a2;
+        }
+        a(1, 0)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1,1,2,2",
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1, a2) {
+            a2 = 2;
+            return arguments[0] + "," + a1 + "," + arguments[1] + "," + a2;
+        }
+        a(1, 0)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1,1,2,2",
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1, a2) {
+            arguments[1] = 2;
+            return arguments[0] + "," + a1 + "," + arguments[1] + "," + a2;
+        }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1,1,2,undefined",
+    });
+    expect(
+        await runAsync(String.raw`
+        function a(a1, a2) {
+            a2 = 2;
+            return arguments[0] + "," + a1 + "," + arguments[1] + "," + a2;
+        }
+        a(1)
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "1,1,undefined,2",
+    });
+    expect(
+        await runAsync(String.raw`
         function a() { var v = 1; return delete v; }
         a()
     `)

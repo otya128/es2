@@ -5785,10 +5785,10 @@ function newFunction(ctx: Context, name: string, parameters: string[], block: Bl
                 dontDelete: true,
                 value: args[i],
             });
-            nameToIArg.set(parameters[i]!, String(i));
         }
         // CreateMappedArgumentsObject
         for (let i = 0; i < args.length; i++) {
+            nameToIArg.set(parameters[i]!, String(i));
             argumentsObject.properties.set(String(i), {
                 // newer ES: [[Writable]]: true, [[Enumerable]]: true, [[Configurable]]: true
                 // ES2: { DontEnum }
