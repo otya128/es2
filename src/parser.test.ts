@@ -92,7 +92,11 @@ test("tokenizer", () => {
     expect(filterByValue(tokenize(String.raw`"\""`))).toStrictEqual(['"']);
     expect(filterByValue(tokenize(String.raw`'\''`))).toStrictEqual(["\'"]);
     expect(filterByValue(tokenize(String.raw`"abc\nm"`))).toStrictEqual(["abc\nm"]);
+    expect(filterByValue(tokenize(String.raw`"abc\0v"`))).toStrictEqual(["abc\x00v"]);
+    expect(filterByValue(tokenize(String.raw`"abc\01v"`))).toStrictEqual(["abc\x01v"]);
     expect(filterByValue(tokenize(String.raw`"abc\012v"`))).toStrictEqual(["abc\x0av"]);
+    expect(filterByValue(tokenize(String.raw`"abc\377v"`))).toStrictEqual(["abc\xffv"]);
+    expect(filterByValue(tokenize(String.raw`"abc\444v"`))).toStrictEqual(["abc$4v"]);
     expect(filterByValue(tokenize(String.raw`"abc\x0av"`))).toStrictEqual(["abc\x0av"]);
     expect(filterByValue(tokenize(String.raw`"abc\u000av"`))).toStrictEqual(["abc\x0av"]);
     expect(filterByValue(tokenize(String.raw`"\i"`))).toStrictEqual(["i"]);

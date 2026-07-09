@@ -376,6 +376,9 @@ class Reader {
     peek(count: number): string {
         return this.source.substring(this.index, this.index + count);
     }
+    peekNext(count: number): string {
+        return this.source.substring(this.index + 1, this.index + 1 + count);
+    }
     substring(start: Position, end: Position): string {
         return this.source.substring(start.index, end.index);
     }
@@ -734,36 +737,29 @@ function readStringLiteral(reader: Reader): StringLiteral {
                         }
                         value += String.fromCharCode(parseInt(u1 + u2 + u3 + u4, 16));
                     } else if (isZeroToThree(char)) {
-                        const o1 = reader.next();
+                        // OctalEscapeSequence
+                        const o1 = reader.peekNext(1);
                         if (!isOctalDigit(o1)) {
-                            throw new InterpreterSyntaxError(
-                                ...formatUnexpectedCharacterError(
-                                    "OctalEscapeSequence",
-                                    "OctalDigit",
-                                    reader.current,
-                                    reader.position
-                                )
-                            );
+                            value += String.fromCharCode(parseInt(char, 8));
+                            break;
                         }
-                        const o2 = reader.next();
+                        reader.next();
+                        const o2 = reader.peekNext(1);
                         if (!isOctalDigit(o2)) {
-                            throw new InterpreterSyntaxError(
-                                ...formatUnexpectedCharacterError(
-                                    "OctalEscapeSequence",
-                                    "OctalDigit",
-                                    reader.current,
-                                    reader.position
-                                )
-                            );
+                            value += String.fromCharCode(parseInt(char + o1, 8));
+                            break;
                         }
+                        reader.next();
                         value += String.fromCharCode(parseInt(char + o1 + o2, 8));
                     } else if (isOctalDigit(char)) {
-                        let o = char;
                         // OctalEscapeSequence
-                        if (isOctalDigit(reader.current)) {
-                            o += reader.next();
+                        const o1 = reader.peekNext(1);
+                        if (!isOctalDigit(o1)) {
+                            value += String.fromCharCode(parseInt(char, 8));
+                            break;
                         }
-                        value += String.fromCharCode(parseInt(o, 8));
+                        reader.next();
+                        value += String.fromCharCode(parseInt(char + o1, 8));
                     } else if (isLineTerminator(char)) {
                         throw new InterpreterSyntaxError(
                             ...formatUnexpectedCharacterError(
