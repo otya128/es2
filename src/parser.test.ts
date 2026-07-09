@@ -4976,6 +4976,22 @@ Number.prototype.hoge = 1;
     });
     expect(
         await runAsync(String.raw`
+        new Date().toUTCString == new Date().toGMTString`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
+    expect(
+        await runAsync(String.raw`
+        new Date().toUTCString == new Date().toString`)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
+    });
+    expect(
+        await runAsync(String.raw`
         var o = new Object;
         o == o.valueOf()`)
     ).toStrictEqual({

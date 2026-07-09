@@ -4520,21 +4520,13 @@ function createIntrinsics(): Intrinsics {
             0
         ),
     });
+    // 15.9.5.41 Date.prototype.toGMTString()
+    // > The function object that is the initial value of Date.prototype.toGMTString is the same function object that is the initial value of Date.prototype.toUTCString
     datePrototype.properties.set("toGMTString", {
         readOnly: false,
         dontEnum: true,
         dontDelete: false,
-        value: newNativeFunction(
-            functionPrototype,
-            function* datePrototypeToUTCString(ctx, self, _args, caller) {
-                const value = getDateObjectValue(self);
-                if (value == null) {
-                    throw new InterpreterTypeError(`Date.prototype.toGMTString: this must be Date object`, ctx, caller);
-                }
-                return new Date(value).toUTCString();
-            },
-            0
-        ),
+        value: datePrototype.properties.get("toUTCString")?.value,
     });
     datePrototype.properties.set("setYear", {
         readOnly: false,
