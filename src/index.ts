@@ -4533,15 +4533,21 @@ function createIntrinsics(): Intrinsics {
         dontDelete: false,
         value: newNativeFunction(
             functionPrototype,
-            function* datePrototypeSetSeconds(ctx, self, args, caller) {
+            function* datePrototypeSetYear(ctx, self, args, caller) {
                 const value = getDateObjectValue(self);
-                if (value == null) {
+                if (value == null || !isObject(self)) {
                     throw new InterpreterTypeError(`Date.prototype.setYear: this must be Date object`, ctx, caller);
                 }
                 const year = yield* toNumber(ctx, args[0], caller);
-                return new Date(value).setFullYear(year);
+                const integerYear = toInteger(year);
+                if (!Number.isNaN(year) && integerYear >= 0 && integerYear <= 99) {
+                    self.internalProperties.value = new Date(value).setFullYear(integerYear + 1900);
+                } else {
+                    self.internalProperties.value = new Date(value).setFullYear(year);
+                }
+                return self.internalProperties.value;
             },
-            2
+            1
         ),
     });
     date.properties.set("prototype", {

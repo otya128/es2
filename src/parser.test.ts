@@ -496,19 +496,19 @@ b`)
         )
     ).toStrictEqual(["(expr (post-inc a))", "(expr b)"]);
     expect(error(() => parse(String.raw`a++b`))).toBeTruthy();
-    expect(
-        astToString(
-            parse(String.raw`a.b++`)
-        )
-    ).toStrictEqual(["(expr (post-inc (member-ident a b)))"]);
+    expect(astToString(parse(String.raw`a.b++`))).toStrictEqual(["(expr (post-inc (member-ident a b)))"]);
     expect(
         astToString(
             parse(String.raw`a.
 b++`)
         )
     ).toStrictEqual(["(expr (post-inc (member-ident a b)))"]);
-    expect(error(() => parse(String.raw`a.b
-++`))).toBeTruthy();
+    expect(
+        error(() =>
+            parse(String.raw`a.b
+++`)
+        )
+    ).toBeTruthy();
     expect(
         astToString(
             parse(String.raw`a = b + c
@@ -4761,6 +4761,26 @@ Number.prototype.hoge = 1;
         type: "normalCompletion",
         hasValue: true,
         value: 0,
+    });
+    expect(await runAsync(String.raw`a = new Date(1999, 2, 20);a.setYear(70);a.getYear();`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 70,
+    });
+    expect(await runAsync(String.raw`a = new Date(1999, 2, 20);a.setYear(70);a.getFullYear();`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1970,
+    });
+    expect(await runAsync(String.raw`a = new Date(1999, 2, 20);a.setYear(NaN);+a`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
+    expect(await runAsync(String.raw`a = new Date(1999, 2, 20);a.setFullYear(NaN);+a`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
     });
     expect(await runAsync(String.raw`typeof(new Date() + new Date())`)).toStrictEqual({
         type: "normalCompletion",
