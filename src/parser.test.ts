@@ -4766,6 +4766,11 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: "number",
     });
+    expect(await runAsync(String.raw`typeof Date.prototype.valueOf()`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "number",
+    });
     expect(await runAsync(String.raw`Date.parse()`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
@@ -4779,12 +4784,22 @@ Number.prototype.hoge = 1;
     expect(
         await runAsync(String.raw`
         Date.prototype.toS = Object.prototype.toString
+        new Date().toS()
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "[object Date]",
+    });
+    expect(
+        await runAsync(String.raw`
+        Date.prototype.toS = Object.prototype.toString
         Date.prototype.toS()
         `)
     ).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
-        value: "[object Object]",
+        value: "[object Date]",
     });
     expect(
         await runAsync(String.raw`

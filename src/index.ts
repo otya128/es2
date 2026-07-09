@@ -4392,7 +4392,14 @@ function createIntrinsics(): Intrinsics {
             1
         ),
     });
-    const datePrototype: InterpreterObject = newObject(objectPrototype);
+    const datePrototype: InterpreterObject = {
+        internalProperties: {
+            prototype: objectPrototype,
+            class: "Date",
+            value: NaN,
+        },
+        properties: new Map([]),
+    };
     datePrototype.properties.set("constructor", {
         readOnly: false,
         dontEnum: true,
