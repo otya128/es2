@@ -5287,7 +5287,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                 yield* evaluateExpression(ctx, expression.right),
                 expression.right
             );
-            return yield* bitwiseAnd(ctx, rightValue, leftValue, expression);
+            return yield* bitwiseAnd(ctx, leftValue, rightValue, expression);
         }
         case "bitwiseXorOperator": {
             const leftValue = yield* referenceGetValue(
@@ -5300,7 +5300,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                 yield* evaluateExpression(ctx, expression.right),
                 expression.right
             );
-            return yield* bitwiseXor(ctx, rightValue, leftValue, expression);
+            return yield* bitwiseXor(ctx, leftValue, rightValue, expression);
         }
         case "bitwiseOrOperator": {
             const leftValue = yield* referenceGetValue(
@@ -5313,7 +5313,7 @@ function* evaluateExpression(ctx: Context, expression: Expression): Generator<un
                 yield* evaluateExpression(ctx, expression.right),
                 expression.right
             );
-            return yield* bitwiseOr(ctx, rightValue, leftValue, expression);
+            return yield* bitwiseOr(ctx, leftValue, rightValue, expression);
         }
         case "logicalAndOperator": {
             const leftValue = yield* referenceGetValue(

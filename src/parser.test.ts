@@ -3198,6 +3198,42 @@ Number.prototype.hoge = 1;
     });
     expect(
         await runAsync(String.raw`
+        log = "";
+        function A(a) { this.hoge = a; }
+        function AToValueOf() {
+            log += this.hoge;
+            return 0;
+        }
+        A.prototype.valueOf = AToValueOf;
+        var l = new A("l"), r = new A("r");
+        l + r;
+        log
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "lr",
+    });
+    expect(
+        await runAsync(String.raw`
+        log = "";
+        function A(a) { this.hoge = a; }
+        function AToValueOf() {
+            log += this.hoge;
+            return 0;
+        }
+        A.prototype.valueOf = AToValueOf;
+        var l = new A("l"), r = new A("r");
+        l & r;
+        log
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "lr",
+    });
+    expect(
+        await runAsync(String.raw`
         function hoge() { return 1; }
         hoge.prototype.constructor();
     `)
