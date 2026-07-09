@@ -4253,8 +4253,56 @@ function createIntrinsics(): Intrinsics {
         functionPrototype,
         function* parseIntFunction(ctx, _self, args, caller) {
             const string = yield* toString(ctx, args[0], caller);
-            const radix = yield* toNumber(ctx, args[1], caller);
-            return parseInt(string, radix); // l
+            let radix = yield* toInt32(ctx, args[1], caller);
+            if (radix !== 0 && (radix < 2 || radix > 36)) {
+                return NaN;
+            }
+            let sign = 1;
+            for (let i = 0; i < string.length; i++) {
+                const c = string.charAt(i);
+                if (!isLineTerminator(c) && !isWhiteSpace(c)) {
+                    if (c === "+") {
+                        sign = 1;
+                        i++;
+                    } else if (c === "-") {
+                        sign = -1;
+                        i++;
+                    }
+                    const zero = string.charAt(i);
+                    const x = string.charAt(i + 1);
+                    if (radix !== 0) {
+                        if (zero === "0" && (x === "x" || x === "X")) {
+                            i += 2;
+                        }
+                    } else if (zero === "0") {
+                        if (x === "x" || x === "X") {
+                            radix = 16;
+                            i += 2;
+                        } else {
+                            radix = 8;
+                        }
+                    } else {
+                        radix = 10;
+                    }
+                    const begin = i;
+                    for (; i < string.length; i++) {
+                        const digitCode = string.charCodeAt(i);
+                        let digit = 36;
+                        if (digitCode >= "0".charCodeAt(0) && digitCode <= "9".charCodeAt(0)) {
+                            digit = digitCode - "0".charCodeAt(0);
+                        } else if (digitCode >= "A".charCodeAt(0) && digitCode <= "Z".charCodeAt(0)) {
+                            digit = digitCode - "A".charCodeAt(0);
+                        } else if (digitCode >= "a".charCodeAt(0) && digitCode <= "z".charCodeAt(0)) {
+                            digit = digitCode - "a".charCodeAt(0);
+                        }
+                        if (digit >= radix) {
+                            break;
+                        }
+                    }
+                    return sign * parseInt(string.substring(begin, i), radix);
+                }
+            }
+            return NaN;
         },
         2
     );
