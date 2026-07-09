@@ -5607,7 +5607,7 @@ function* runForInStatement(ctx: Context, statement: ForInStatement): Generator<
                 };
             }
             if (result.type === "abruptCompletion" && result.cause === "break") {
-                break;
+                return completion;
             }
             if (result.type === "returnCompletion") {
                 return result;

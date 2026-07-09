@@ -2443,6 +2443,89 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: "a",
     });
+    expect(
+        await runAsync(String.raw`
+            function hoge() { this.a = 1; }
+            var o = new hoge();
+            for (var a in o) a;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "a",
+    });
+    expect(
+        await runAsync(String.raw`
+            function hoge() { }
+            hoge.prototype.a = 1;
+            var o = new hoge();
+            for (var a in o) a;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "a",
+    });
+    expect(
+        await runAsync(String.raw`
+            function hoge() { this.b = 1; }
+            hoge.prototype.a = 1;
+            var o = new hoge();
+            var c = 0;
+            for (var a in o) c++;
+            c;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(
+        await runAsync(String.raw`
+            function hoge() { this.b = 1; }
+            hoge.prototype.a = 1;
+            var o = new hoge();
+            var c = 0;
+            for (var a in o) {
+                c++;
+                break;
+            }
+            c;
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+            function hoge() { this.b = 1; }
+            var o = new hoge();
+            for (var a in o) {
+                "hoge"
+                break;
+            }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "hoge",
+    });
+    expect(
+        await runAsync(String.raw`
+            function hoge() { this.b = 1; }
+            hoge.prototype.a = 1;
+            var o = new hoge();
+            for (var a in o) {
+                "hoge"
+                break;
+            }
+        `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "hoge",
+    });
     expect(await runAsync(String.raw`for (var a in Object);`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: false,
