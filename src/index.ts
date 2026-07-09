@@ -2161,7 +2161,7 @@ function parseArgumentList(tokenizer: Tokenizer): AssignmentExpression[] {
         if (endOrComma.type === "punctuator" && endOrComma.value === ")") {
             return argumentList;
         }
-        if (endOrComma.type !== "punctuator" && endOrComma.value !== ",") {
+        if (endOrComma.type !== "punctuator" || endOrComma.value !== ",") {
             throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ArgumentList", ",", endOrComma));
         }
         tokenizer.next();
