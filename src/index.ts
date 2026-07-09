@@ -421,7 +421,7 @@ export function* tokenize(source: string, sourceInfo?: SourceInfo): Generator<To
             } else if (isOctalDigit(char)) {
                 yield parseOctalIntegerLiteral(reader, start);
             } else {
-                if (char === "." || isDecimalDigit(char) || isExponentIndicator(char)) {
+                if (char === "." || isExponentIndicator(char)) {
                     yield parseDecimalLiteral(reader, start);
                 } else {
                     yield { type: "numericLiteral", value: 0, start, end: reader.prevPosition };

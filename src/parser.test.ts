@@ -54,6 +54,7 @@ test("tokenizer", () => {
     expect(filterByValue(tokenize("+123"))).toStrictEqual(["+", 123]);
     expect(filterByValue(tokenize("0123"))).toStrictEqual([0o123]);
     expect(filterByValue(tokenize("07"))).toStrictEqual([0o7]);
+    expect(filterByValue(tokenize("08"))).toStrictEqual([0, 8]);
     expect(filterByValue(tokenize("0x123"))).toStrictEqual([0x123]);
     expect(filterByValue(tokenize("0Xf"))).toStrictEqual([0xf]);
     expect(filterByValue(tokenize("0xF"))).toStrictEqual([0xf]);
