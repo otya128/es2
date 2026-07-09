@@ -2913,6 +2913,7 @@ type CallingInfo = {
     parent: CallingInfo | undefined;
     name: string;
     caller: Caller;
+    evalCode: boolean;
 };
 
 type Scope = {
@@ -4223,6 +4224,7 @@ function createIntrinsics(): Intrinsics {
                         parent: ctx.scope.callingInfo?.parent,
                         name: "eval code",
                         caller,
+                        evalCode: true,
                     },
                 },
             };
@@ -5711,13 +5713,35 @@ function* runStatement(ctx: Context, statement: Statement): Generator<unknown, C
     }
 }
 
+function findVariableObject(scope: Scope): InterpreterObject {
+    // 10.1.6 Activation object
+    // > The activation object is then used as the variable object for the purposes of variable instantiation.
+    // 10.2.1 Global Code
+    // > Variable instantiation is performed using the global object as the variable object and using empty property attributes
+    // 10.2.2 Eval Code
+    // Variable instantiation is performed using the calling context's variable object and using empty property attributes.
+    while (!scope.activation) {
+        if (scope.parent == null) {
+            return scope.object;
+        }
+        scope = scope.parent;
+    }
+    return scope.object;
+}
+
 function defineVariable(ctx: Context, list: VariableDeclaration[]) {
+    const variableObject = findVariableObject(ctx.scope);
     for (const decl of list) {
-        if (!ctx.scope.object.properties.has(decl.name)) {
-            ctx.scope.object.properties.set(decl.name, {
+        if (!variableObject.properties.has(decl.name)) {
+            variableObject.properties.set(decl.name, {
                 readOnly: false,
                 dontEnum: false,
-                dontDelete: true,
+                // 12.2 Variable statement
+                // > If the variable statement occurs inside a FunctionDeclaration, the variables are defined with function-local scope in that function, as described in section 10.1.3. Otherwise, they are defined with global scope (that is, they are created as members of the global object, as described in section 10.1.3) using property attributes { DontDelete }..
+                // 10.2.1 Global Code
+                // > The scope chain is created and initialised to contain the global object and no others. Variable instantiation is performed using the global object as the variable object and using empty property attributes
+                // This is contradictory in ES2, but from after ES2 non-eval code gives the property the DontDelete attribute, so we adopt that.
+                dontDelete: ctx.scope.callingInfo?.evalCode === true ? false : true,
                 value: undefined,
             });
         }
@@ -5739,6 +5763,7 @@ function newFunction(ctx: Context, name: string, parameters: string[], block: Bl
                 parent: ctx.scope.callingInfo,
                 caller,
                 name,
+                evalCode: false,
             },
         };
         const context: Context = {

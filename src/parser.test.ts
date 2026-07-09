@@ -2899,6 +2899,11 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 1,
     });
+    expect(await runAsync(String.raw`eval("var a = 1;");delete a`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: true,
+    });
     expect(await runAsync(String.raw`void (a = 1)`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
@@ -3828,6 +3833,15 @@ Number.prototype.hoge = 1;
         type: "normalCompletion",
         hasValue: true,
         value: 1,
+    });
+    expect(
+        await runAsync(String.raw`
+        eval('a = new Object();with (a){eval("var c = 1");}a.c;')
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: undefined,
     });
     expect(
         await runAsync(String.raw`
