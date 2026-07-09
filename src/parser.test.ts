@@ -498,6 +498,19 @@ b`)
     expect(error(() => parse(String.raw`a++b`))).toBeTruthy();
     expect(
         astToString(
+            parse(String.raw`a.b++`)
+        )
+    ).toStrictEqual(["(expr (post-inc (member-ident a b)))"]);
+    expect(
+        astToString(
+            parse(String.raw`a.
+b++`)
+        )
+    ).toStrictEqual(["(expr (post-inc (member-ident a b)))"]);
+    expect(error(() => parse(String.raw`a.b
+++`))).toBeTruthy();
+    expect(
+        astToString(
             parse(String.raw`a = b + c
 (d + e).print()`)
         )

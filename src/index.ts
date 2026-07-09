@@ -2169,10 +2169,9 @@ function parseArgumentList(tokenizer: Tokenizer): AssignmentExpression[] {
 }
 
 function parsePostfixExpression(tokenizer: Tokenizer): PostfixExpression {
-    const begin = tokenizer.current;
     const expression = parseLeftHandSideExpression(tokenizer);
     const token = tokenizer.current;
-    if (begin.end.line !== token.end.line) {
+    if (expression.end.line !== token.end.line) {
         return expression;
     }
     if (token.type === "punctuator" && token.value === "++") {
