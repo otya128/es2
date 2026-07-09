@@ -3749,7 +3749,7 @@ function createIntrinsics(): Intrinsics {
                 // FIXME
                 return "Function";
             },
-            1
+            0
         ),
     });
     objectPrototype.properties.set("constructor", {
@@ -3842,7 +3842,7 @@ function createIntrinsics(): Intrinsics {
                 }
                 return self.internalProperties.value;
             },
-            1
+            0
         ),
     });
     stringPrototype.properties.set("valueOf", {
@@ -3857,7 +3857,7 @@ function createIntrinsics(): Intrinsics {
                 }
                 return self.internalProperties.value;
             },
-            1
+            0
         ),
     });
     stringPrototype.properties.set("charAt", {
@@ -3900,7 +3900,7 @@ function createIntrinsics(): Intrinsics {
                 const position = args[1] === undefined ? 0 : toInteger(yield* toNumber(ctx, args[1], caller));
                 return str.indexOf(searchStr, position); // l
             },
-            1
+            2
         ),
     });
     stringPrototype.properties.set("lastIndexOf", {
@@ -3915,7 +3915,7 @@ function createIntrinsics(): Intrinsics {
                 const position = args[1] === undefined ? NaN : toInteger(yield* toNumber(ctx, args[1], caller));
                 return str.lastIndexOf(searchStr, position); // l
             },
-            1
+            2
         ),
     });
     stringPrototype.properties.set("split", {
@@ -3960,7 +3960,7 @@ function createIntrinsics(): Intrinsics {
                 const str = yield* toString(ctx, self, caller);
                 return str.toLowerCase();
             },
-            1
+            0
         ),
     });
     stringPrototype.properties.set("toUpperCase", {
@@ -3973,7 +3973,7 @@ function createIntrinsics(): Intrinsics {
                 const str = yield* toString(ctx, self, caller);
                 return str.toUpperCase();
             },
-            1
+            0
         ),
     });
     string.properties.set("prototype", {
@@ -4068,7 +4068,7 @@ function createIntrinsics(): Intrinsics {
                 }
                 return value;
             },
-            1
+            0
         ),
     });
     number.properties.set("prototype", {
@@ -4115,7 +4115,7 @@ function createIntrinsics(): Intrinsics {
                 const value = self.internalProperties.value;
                 return value ? "true" : "false";
             },
-            1
+            0
         ),
     });
     booleanPrototype.properties.set("valueOf", {
@@ -4134,7 +4134,7 @@ function createIntrinsics(): Intrinsics {
                 }
                 return self.internalProperties.value;
             },
-            1
+            0
         ),
     });
     boolean.properties.set("prototype", {

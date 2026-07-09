@@ -4689,7 +4689,7 @@ Number.prototype.hoge = 1;
     expect(await runAsync(String.raw`String.prototype.indexOf.length`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
-        value: 1,
+        value: 2,
     });
     expect(await runAsync(String.raw`"indexnullnull".lastIndexOf(null)`)).toStrictEqual({
         type: "normalCompletion",
@@ -4704,7 +4704,7 @@ Number.prototype.hoge = 1;
     expect(await runAsync(String.raw`String.prototype.lastIndexOf.length`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
-        value: 1,
+        value: 2,
     });
     expect(await runAsync(String.raw`"ABC".split().join()`)).toStrictEqual({
         type: "normalCompletion",
@@ -4769,7 +4769,7 @@ Number.prototype.hoge = 1;
     expect(await runAsync(String.raw`String.prototype.toLowerCase.length`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
-        value: 1,
+        value: 0,
     });
     expect(await runAsync(String.raw`delete Math.E`)).toStrictEqual({
         type: "normalCompletion",
