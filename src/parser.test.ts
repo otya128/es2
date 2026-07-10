@@ -1401,6 +1401,121 @@ test("interpreter", async () => {
         hasValue: true,
         value: 0,
     });
+    expect(await runAsync(String.raw`Number("")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await runAsync(String.raw`Number(" ")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await runAsync(String.raw`Number(" 0x ")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
+    expect(await runAsync(String.raw`Number("+0x")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
+    expect(await runAsync(String.raw`Number("-0x")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
+    expect(await runAsync(String.raw`Number("0xf")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 15,
+    });
+    expect(await runAsync(String.raw`Number("0xff")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 255,
+    });
+    expect(await runAsync(String.raw`Number("+11")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 11,
+    });
+    expect(await runAsync(String.raw`Number("-11")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: -11,
+    });
+    expect(await runAsync(String.raw`Number("+Infinity")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: Infinity,
+    });
+    expect(await runAsync(String.raw`Number("-Infinity")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: -Infinity,
+    });
+    expect(await runAsync(String.raw`Number("-.125")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: -0.125,
+    });
+    expect(await runAsync(String.raw`Number("-02.125")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: -2.125,
+    });
+    expect(await runAsync(String.raw`Number("2e10")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2e10,
+    });
+    expect(await runAsync(String.raw`Number(".")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
+    expect(await runAsync(String.raw`Number(".5e10")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0.5e10,
+    });
+    expect(await runAsync(String.raw`Number(".A")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
+    expect(await runAsync(String.raw`Number("1.A")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
+    expect(await runAsync(String.raw`Number("1.125e+100")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1.125e100,
+    });
+    expect(await runAsync(String.raw`Number("1.125e+")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
+    expect(await runAsync(String.raw`Number(".125e+1A")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
+    expect(await runAsync(String.raw`Number("0xF")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0xf,
+    });
+    expect(await runAsync(String.raw`Number("0XF")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0xf,
+    });
     expect(await runAsync("Boolean()")).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
@@ -1410,6 +1525,11 @@ test("interpreter", async () => {
         type: "normalCompletion",
         hasValue: true,
         value: true,
+    });
+    expect(await runAsync("Boolean(null)")).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: false,
     });
     expect(await runAsync("String.prototype + '1'")).toStrictEqual({
         type: "normalCompletion",
@@ -3204,6 +3324,25 @@ Number.prototype.hoge = 1;
     });
     expect(
         await runAsync(String.raw`
+        function A() {
+            this.hoge = 1;
+        }
+        function AToValueOf() {
+            return this.hoge;
+        }
+        A.prototype.toString = null;
+        A.prototype.valueOf = AToValueOf;
+        var a = new A();
+        var ary = new Array(3, 2, 1);
+        ary[a]
+    `)
+    ).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 2,
+    });
+    expect(
+        await runAsync(String.raw`
         log = "";
         function A(a) { this.hoge = a; }
         function AToValueOf() {
@@ -4801,7 +4940,22 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 8,
     });
+    expect(await runAsync(String.raw`parseInt("", 16)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: NaN,
+    });
     expect(await runAsync(String.raw`parseInt("0x10")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 16,
+    });
+    expect(await runAsync(String.raw`parseInt("0X10", 16)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 16,
+    });
+    expect(await runAsync(String.raw`parseInt("0x10", 16)`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
         value: 16,

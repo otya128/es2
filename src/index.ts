@@ -3197,6 +3197,102 @@ export function* toString(ctx: Context, value: Value, caller: Caller): Generator
     return yield* toString(ctx, yield* toPrimitive(ctx, value, "string", caller), caller);
 }
 
+function isValidStringNumericLiteral(value: string): boolean {
+    let i = 0;
+    for (; i < value.length; i++) {
+        const c = value.charAt(i);
+        if (isLineTerminator(c) || isWhiteSpace(c)) {
+            continue;
+        }
+        break;
+    }
+    if (i < value.length) {
+        const isHex = value.charAt(i) === "0" && (value.charAt(i + 1) === "x" || value.charAt(i + 1) === "X");
+        if (isHex) {
+            i += 2;
+            for (; i < value.length; i++) {
+                const c = value.charAt(i);
+                if (isHexDigit(c)) {
+                    continue;
+                }
+                break;
+            }
+        } else {
+            if (value.charAt(i) === "+" || value.charAt(i) === "-") {
+                i++;
+            }
+            if (value.substring(i, i + "Infinity".length) === "Infinity") {
+                i += "Infinity".length;
+            } else {
+                if (value.charAt(i) === ".") {
+                    i++;
+                    if (!isDecimalDigit(value.charAt(i))) {
+                        return false;
+                    }
+                    for (; i < value.length; i++) {
+                        const c = value.charAt(i);
+                        if (isDecimalDigit(c)) {
+                            continue;
+                        }
+                        break;
+                    }
+                } else {
+                    if (!isDecimalDigit(value.charAt(i))) {
+                        return false;
+                    }
+                    for (; i < value.length; i++) {
+                        const c = value.charAt(i);
+                        if (isDecimalDigit(c)) {
+                            continue;
+                        }
+                        break;
+                    }
+                    if (value.charAt(i) === ".") {
+                        i++;
+                        if (!isDecimalDigit(value.charAt(i))) {
+                            return false;
+                        }
+                        for (; i < value.length; i++) {
+                            const c = value.charAt(i);
+                            if (isDecimalDigit(c)) {
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+                }
+                if (value.charAt(i) === "e" || value.charAt(i) === "E") {
+                    i++;
+                    if (value.charAt(i) === "+" || value.charAt(i) === "-") {
+                        i++;
+                    }
+                    if (!isDecimalDigit(value.charAt(i))) {
+                        return false;
+                    }
+                    for (; i < value.length; i++) {
+                        const c = value.charAt(i);
+                        if (isDecimalDigit(c)) {
+                            continue;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        for (; i < value.length; i++) {
+            const c = value.charAt(i);
+            if (isLineTerminator(c) || isWhiteSpace(c)) {
+                continue;
+            }
+            break;
+        }
+    }
+    if (i !== value.length) {
+        return false;
+    }
+    return true;
+}
+
 export function* toNumber(ctx: Context, value: Value, caller: Caller): Generator<unknown, number> {
     if (value === undefined) {
         return NaN;
@@ -3211,7 +3307,11 @@ export function* toNumber(ctx: Context, value: Value, caller: Caller): Generator
         return value;
     }
     if (typeof value === "string") {
-        return Number(value); // l
+        if (isValidStringNumericLiteral(value)) {
+            return Number(value);
+        } else {
+            return NaN;
+        }
     }
     return yield* toNumber(ctx, yield* toPrimitive(ctx, value, "number", caller), caller);
 }
