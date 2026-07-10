@@ -4373,7 +4373,7 @@ function createIntrinsics(): Intrinsics {
                     const zero = string.charAt(i);
                     const x = string.charAt(i + 1);
                     if (radix !== 0) {
-                        if (zero === "0" && (x === "x" || x === "X")) {
+                        if (radix === 16 && zero === "0" && (x === "x" || x === "X")) {
                             i += 2;
                         }
                     } else if (zero === "0") {

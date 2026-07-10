@@ -4951,6 +4951,11 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 16,
     });
+    expect(await runAsync(String.raw`parseInt("0x10", 10)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
     expect(await runAsync(String.raw`parseInt("0X10", 16)`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
