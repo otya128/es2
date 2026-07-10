@@ -404,8 +404,8 @@ export function* tokenize(source: string, sourceInfo?: SourceInfo): Generator<To
             continue;
         }
         if (char === ".") {
-            const chars = reader.peek(2)[1];
-            if (isDecimalDigit(chars ?? "")) {
+            const next = reader.peekNext(1);
+            if (isDecimalDigit(next)) {
                 yield parseDecimalLiteral(reader, start);
                 continue;
             }
@@ -415,15 +415,17 @@ export function* tokenize(source: string, sourceInfo?: SourceInfo): Generator<To
             continue;
         }
         if (char === "0") {
-            const char = reader.next();
-            if (char === "x" || char === "X") {
+            const next = reader.peekNext(1);
+            if (next === "x" || next === "X") {
+                reader.consume(1);
                 yield parseHexIntegerLiteral(reader, start);
-            } else if (isOctalDigit(char)) {
+            } else if (isOctalDigit(next)) {
                 yield parseOctalIntegerLiteral(reader, start);
             } else {
-                if (char === "." || isExponentIndicator(char)) {
+                if (next === "." || isExponentIndicator(next)) {
                     yield parseDecimalLiteral(reader, start);
                 } else {
+                    reader.consume(1);
                     yield { type: "numericLiteral", value: 0, start, end: reader.prevPosition };
                 }
             }

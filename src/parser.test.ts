@@ -78,6 +78,7 @@ test("tokenizer", () => {
     expect(filterByValue(tokenize("12."))).toStrictEqual([12]);
     expect(filterByValue(tokenize(".1"))).toStrictEqual([0.1]);
     expect(filterByValue(tokenize(".12"))).toStrictEqual([0.12]);
+    expect(filterByValue(tokenize("0e2"))).toStrictEqual([0e2]);
     expect(filterByValue(tokenize("1e2"))).toStrictEqual([1e2]);
     expect(filterByValue(tokenize("1e2 13"))).toStrictEqual([1e2, 13]);
     expect(filterByValue(tokenize("0.e+2"))).toStrictEqual([0e2]);
