@@ -520,6 +520,13 @@ b++`)
     ).toStrictEqual(["(expr (= b (new-no-args Object)))", "(expr (pre-inc (member-ident b x)))"]);
     expect(
         astToString(
+            parse(String.raw`b = new Object
+b["x"
+]++`)
+        )
+    ).toStrictEqual(["(expr (= b (new-no-args Object)))", "(expr (post-inc (member-expr b x)))"]);
+    expect(
+        astToString(
             parse(String.raw`a = b + c
 (d + e).print()`)
         )

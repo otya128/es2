@@ -2085,7 +2085,7 @@ function parseMemberExpression(tokenizer: Tokenizer): MemberExpression {
                 left,
                 right,
                 start: left.start,
-                end: right.end,
+                end: token.end,
             };
             tokenizer.next();
         } else {
@@ -2138,7 +2138,7 @@ function parseLeftHandSideExpression(tokenizer: Tokenizer): LeftHandSideExpressi
                 left,
                 right,
                 start: left.start,
-                end: right.end,
+                end: token.end,
             };
             tokenizer.next();
         } else {
