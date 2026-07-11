@@ -2050,7 +2050,7 @@ function parseMemberExpression(tokenizer: Tokenizer): MemberExpression {
                 expression,
                 argumentList: undefined,
                 start: begin.start,
-                end: tokenizer.current.end,
+                end: expression.end,
             };
         }
     } else {

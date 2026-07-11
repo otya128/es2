@@ -511,6 +511,13 @@ b++`)
 ++`)
         )
     ).toBeTruthy();
+    expect(error(() => parse(String.raw`b = new Object++b.x`))).toBeTruthy();
+    expect(
+        astToString(
+            parse(String.raw`b = new Object
+++b.x`)
+        )
+    ).toStrictEqual(["(expr (= b (new-no-args Object)))", "(expr (pre-inc (member-ident b x)))"]);
     expect(
         astToString(
             parse(String.raw`a = b + c
