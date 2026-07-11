@@ -3999,7 +3999,7 @@ function createIntrinsics(): Intrinsics {
             function* stringIndexOf(ctx, self, args, caller) {
                 const str = yield* toString(ctx, self, caller);
                 const searchStr = yield* toString(ctx, args[0], caller);
-                const position = args[1] === undefined ? 0 : toInteger(yield* toNumber(ctx, args[1], caller));
+                const position = toInteger(yield* toNumber(ctx, args[1], caller));
                 return str.indexOf(searchStr, position); // l
             },
             2
@@ -4014,8 +4014,8 @@ function createIntrinsics(): Intrinsics {
             function* stringLastIndexOf(ctx, self, args, caller) {
                 const str = yield* toString(ctx, self, caller);
                 const searchStr = yield* toString(ctx, args[0], caller);
-                const position = args[1] === undefined ? NaN : toInteger(yield* toNumber(ctx, args[1], caller));
-                return str.lastIndexOf(searchStr, position); // l
+                const position = yield* toNumber(ctx, args[1], caller);
+                return str.lastIndexOf(searchStr, isNaN(position) ? Infinity : toInteger(position)); // l
             },
             2
         ),

@@ -4841,6 +4841,36 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: 5,
     });
+    expect(await runAsync(String.raw`"0123450123545".lastIndexOf(0)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 6,
+    });
+    expect(await runAsync(String.raw`"0123450123545".lastIndexOf(0, Infinity)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 6,
+    });
+    expect(await runAsync(String.raw`"0123450123545".lastIndexOf(0, -1)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await runAsync(String.raw`"0123450123545".lastIndexOf(0, -Infinity)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
+    expect(await runAsync(String.raw`"0123450123545".lastIndexOf(0, NaN)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 6,
+    });
+    expect(await runAsync(String.raw`"0123450123545".lastIndexOf(0, null)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 0,
+    });
     expect(await runAsync(String.raw`String.prototype.lastIndexOf.length`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,
