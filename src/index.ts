@@ -1706,13 +1706,13 @@ function parseIfStatement(tokenizer: Tokenizer, state: ParserState): IfStatement
     }
     const ps = tokenizer.next();
     if (ps.type !== "punctuator" || ps.value !== "(") {
-        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("IfStatement", "(", begin));
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("IfStatement", "(", ps));
     }
     tokenizer.next();
     const expression = parseExpression(tokenizer);
     const pe = tokenizer.current;
     if (pe.type !== "punctuator" || pe.value !== ")") {
-        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("IfStatement", ")", begin));
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("IfStatement", ")", pe));
     }
     tokenizer.next();
     const thenStatement = parseStatement(tokenizer, state);
@@ -1765,7 +1765,7 @@ function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStateme
     }
     const ps = tokenizer.next();
     if (ps.type !== "punctuator" || ps.value !== "(") {
-        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", "(", begin));
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", "(", ps));
     }
     const initToken = tokenizer.next();
     let initialization: VariableStatement | Expression | undefined;
@@ -1799,7 +1799,7 @@ function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStateme
         }
         const end = tokenizer.current;
         if (end.type !== "punctuator" || end.value !== ")") {
-            throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", ")", secondSemicolon));
+            throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", ")", end));
         }
         tokenizer.next();
         const statement = parseStatement(tokenizer, { ...state, for: true });
@@ -1849,7 +1849,7 @@ function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStateme
         const expression = parseExpression(tokenizer);
         const pe = tokenizer.current;
         if (pe.type !== "punctuator" || pe.value !== ")") {
-            throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", ")", begin));
+            throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", ")", pe));
         }
         tokenizer.next();
         const statement = parseStatement(tokenizer, { ...state, for: true });
@@ -1862,7 +1862,7 @@ function parseForStatement(tokenizer: Tokenizer, state: ParserState): ForStateme
             end: tokenizer.prevPosition,
         };
     } else {
-        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", "in or ;", begin));
+        throw new InterpreterSyntaxError(...formatUnexpectedTokenError("ForStatement", "in or ;", inOrSemicolon));
     }
 }
 
