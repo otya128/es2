@@ -4901,6 +4901,16 @@ Number.prototype.hoge = 1;
         hasValue: true,
         value: "ABC",
     });
+    expect(await runAsync(String.raw`"ABC".substring(0)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "ABC",
+    });
+    expect(await runAsync(String.raw`"ABC".substring(0, null)`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: "",
+    });
     expect(await runAsync(String.raw`"ABC".substring(10, 0)`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,

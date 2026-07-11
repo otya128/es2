@@ -4046,7 +4046,7 @@ function createIntrinsics(): Intrinsics {
             function* stringSubstring(ctx, self, args, caller) {
                 const str = yield* toString(ctx, self, caller);
                 const start = toInteger(yield* toNumber(ctx, args[0], caller));
-                const end = args[1] == undefined ? undefined : toInteger(yield* toNumber(ctx, args[1], caller));
+                const end = args[1] === undefined ? undefined : toInteger(yield* toNumber(ctx, args[1], caller));
                 return str.substring(start, end);
             },
             2
