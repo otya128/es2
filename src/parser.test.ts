@@ -1484,6 +1484,16 @@ test("interpreter", async () => {
         hasValue: true,
         value: NaN,
     });
+    expect(await runAsync(String.raw`Number("1.")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1.,
+    });
+    expect(await runAsync(String.raw`Number("1.e2")`)).toStrictEqual({
+        type: "normalCompletion",
+        hasValue: true,
+        value: 1.e2,
+    });
     expect(await runAsync(String.raw`Number(".5e10")`)).toStrictEqual({
         type: "normalCompletion",
         hasValue: true,

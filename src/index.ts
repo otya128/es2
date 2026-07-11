@@ -3251,9 +3251,6 @@ function isValidStringNumericLiteral(value: string): boolean {
                     }
                     if (value.charAt(i) === ".") {
                         i++;
-                        if (!isDecimalDigit(value.charAt(i))) {
-                            return false;
-                        }
                         for (; i < value.length; i++) {
                             const c = value.charAt(i);
                             if (isDecimalDigit(c)) {
