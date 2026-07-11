@@ -358,11 +358,15 @@ class Reader {
         this.prevLine = this.line;
         this.prevColumn = this.column;
         this.column++;
-        if (this.source.charAt(this.index) === "\n") {
+        const isCR = this.source.charAt(this.index) === "\r";
+        if (this.source.charAt(this.index) === "\n" || isCR) {
             this.column = 1;
             this.line++;
         }
         this.index++;
+        if (isCR && this.source.charAt(this.index) === "\n") {
+            this.index++;
+        }
         return this.source.charAt(this.index);
     }
     consume(count: number): void {

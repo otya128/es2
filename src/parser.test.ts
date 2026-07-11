@@ -40,12 +40,7 @@ test("tokenizer", () => {
     expect(filterByValue(tokenize("\na++\n"))).toStrictEqual(["\n", "a", "++", "\n"]);
     expect(filterByValue(tokenize("$0_"))).toStrictEqual(["$0_"]);
     expect(filterByValue(tokenize("keyword /* comment */"))).toStrictEqual(["keyword"]);
-    expect(filterByValue(tokenize("keyword  \u0009\r\n\u000B\u000Ctest"))).toStrictEqual([
-        "keyword",
-        "\n",
-        "\n",
-        "test",
-    ]);
+    expect(filterByValue(tokenize("keyword  \u0009\r\n\u000B\u000Ctest"))).toStrictEqual(["keyword", "\n", "test"]);
     // 3rd edition: Syntax Error
     // The source character immediately following a NumericLiteral must not be an IdentifierStart or DecimalDigit.
     expect(filterByValue(tokenize("3in"))).toStrictEqual([3, "in"]);
@@ -214,6 +209,108 @@ return/*
             end: {
                 index: 15,
                 line: 3,
+                column: 6,
+                sourceInfo: undefined,
+            },
+        },
+    ] satisfies Token[]);
+    expect([...tokenize("\rreturn")]).toMatchObject([
+        {
+            type: "lineTerminator",
+            value: "\n",
+            start: {
+                index: 0,
+                line: 1,
+                column: 1,
+                sourceInfo: undefined,
+            },
+            end: {
+                index: 0,
+                line: 1,
+                column: 1,
+                sourceInfo: undefined,
+            },
+        },
+        {
+            type: "keyword",
+            value: "return",
+            start: {
+                index: 1,
+                line: 2,
+                column: 1,
+                sourceInfo: undefined,
+            },
+            end: {
+                index: 6,
+                line: 2,
+                column: 6,
+                sourceInfo: undefined,
+            },
+        },
+    ] satisfies Token[]);
+    expect([...tokenize("\nreturn")]).toMatchObject([
+        {
+            type: "lineTerminator",
+            value: "\n",
+            start: {
+                index: 0,
+                line: 1,
+                column: 1,
+                sourceInfo: undefined,
+            },
+            end: {
+                index: 0,
+                line: 1,
+                column: 1,
+                sourceInfo: undefined,
+            },
+        },
+        {
+            type: "keyword",
+            value: "return",
+            start: {
+                index: 1,
+                line: 2,
+                column: 1,
+                sourceInfo: undefined,
+            },
+            end: {
+                index: 6,
+                line: 2,
+                column: 6,
+                sourceInfo: undefined,
+            },
+        },
+    ] satisfies Token[]);
+    expect([...tokenize("\r\nreturn")]).toMatchObject([
+        {
+            type: "lineTerminator",
+            value: "\n",
+            start: {
+                index: 0,
+                line: 1,
+                column: 1,
+                sourceInfo: undefined,
+            },
+            end: {
+                index: 0,
+                line: 1,
+                column: 1,
+                sourceInfo: undefined,
+            },
+        },
+        {
+            type: "keyword",
+            value: "return",
+            start: {
+                index: 2,
+                line: 2,
+                column: 1,
+                sourceInfo: undefined,
+            },
+            end: {
+                index: 7,
+                line: 2,
                 column: 6,
                 sourceInfo: undefined,
             },
